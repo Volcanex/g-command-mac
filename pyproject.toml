@@ -1,0 +1,11 @@
+# Metadata only: the app is Node and Electron, built with npm. This file
+# exists so g-core's lineage crawl (brain_gmap) can read [tool.g-core].
+[project]
+name = "g-command-mac"
+version = "0.1.0"
+description = "G-System desktop app: g-command-web in a native window, alert spine notifications and a menu-bar status panel."
+license = { file = "LICENSE" }
+
+[tool.g-core]
+design = "g-system@1.5.0"
+depends = ["ntfy"]

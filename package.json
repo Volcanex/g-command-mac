@@ -1,0 +1,22 @@
+{
+  "name": "g-command-mac",
+  "productName": "g-command",
+  "version": "0.1.0",
+  "description": "G-System desktop app: g-command-web in a window, alert spine notifications, menu-bar status.",
+  "main": "src/main/main.js",
+  "author": "Gabriel Penman",
+  "license": "SEE LICENSE IN LICENSE",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "dist:linux": "electron-builder --linux dir",
+    "dist:mac": "electron-builder --mac",
+    "dist:mac-zip": "electron-builder --mac zip --x64 --arm64",
+    "smoke": "node scripts/smoke.js"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  }
+}

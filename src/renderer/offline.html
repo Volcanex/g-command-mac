@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self'">
+<title>g-command</title>
+<meta name="g-command" content="">
+<script src="command.js"></script>
+<link rel="stylesheet" href="static/g/g.css">
+<script defer src="static/g/g-ui.js"></script>
+<style>
+  html, body { height: 100%; }
+  body { display: flex; align-items: center; justify-content: center; }
+</style>
+</head>
+<body>
+  <div class="empty">
+    <div class="e-title" id="title">Server did not answer</div>
+    <div class="e-desc" id="desc"></div>
+    <button class="btn btn-sm btn-secondary" id="retry">Try again</button>
+  </div>
+  <script>
+    const q = new URLSearchParams(location.search);
+    document.getElementById('title').textContent = `${q.get('server') || 'The server'} did not answer`;
+    document.getElementById('desc').textContent =
+      `The page could not load (${q.get('reason') || 'network error'}). Check the connection, then try again.`;
+    document.getElementById('retry').addEventListener('click', () => { location.href = q.get('url'); });
+  </script>
+</body>
+</html>

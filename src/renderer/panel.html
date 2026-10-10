@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:">
+<title>G-System status</title>
+<meta name="g-command" content="">
+<script src="command.js"></script>
+<link rel="stylesheet" href="static/g/g.css">
+<link rel="stylesheet" href="panel.css">
+<script defer src="static/g/g-ui.js"></script>
+<script defer src="panel.js"></script>
+</head>
+<body>
+  <header class="head">
+    <div class="head-text">
+      <div class="head-title">G-System</div>
+      <div class="head-sub" id="server">Connecting</div>
+    </div>
+    <button class="btn btn-sm btn-tertiary" id="refresh">Refresh</button>
+  </header>
+  <main class="body" id="body">
+    <section>
+      <div class="menu-heading row-heading"><span>System health</span><span class="num" id="health-count"></span></div>
+      <div id="health"><div class="skeleton skeleton-text"></div></div>
+    </section>
+    <hr class="separator">
+    <section>
+      <div class="menu-heading row-heading"><span>Today</span><span class="num" id="today-count"></span></div>
+      <div id="today"><div class="skeleton skeleton-text"></div></div>
+    </section>
+    <hr class="separator">
+    <section>
+      <div class="menu-heading row-heading"><span>Open tickets</span><span class="num" id="tickets-count"></span></div>
+      <div id="tickets"><div class="skeleton skeleton-text"></div></div>
+    </section>
+    <hr class="separator">
+    <section>
+      <div class="menu-heading">This device</div>
+      <div id="local"></div>
+    </section>
+  </main>
+  <footer class="foot">
+    <span class="foot-meta num" id="updated"></span>
+    <button class="btn btn-sm btn-secondary" id="open">Open g-command</button>
+  </footer>
+</body>
+</html>
