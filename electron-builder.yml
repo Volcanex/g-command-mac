@@ -1,7 +1,7 @@
 # electron-builder config. macOS is the real target; Linux exists only so the
 # app can be built and smoke-tested on h under xvfb.
 appId: com.volcanex.g-command
-productName: g-command
+productName: G-Command
 copyright: Copyright Gabriel Penman
 directories:
   output: dist

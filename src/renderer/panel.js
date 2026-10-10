@@ -99,7 +99,7 @@ function renderTickets(r) {
   if (!r.ok) return box.append(item([el('span', 'label', 'Tickets did not load, retrying next poll')], page));
   const d = r.data;
   if (!d.signedIn) {
-    box.append(item([el('span', 'label', 'Sign in to g-command to see tickets')], { kind: 'page', path: '/login' }));
+    box.append(item([el('span', 'label', 'Sign in to G-Command to see tickets')], { kind: 'page', path: '/login' }));
     return;
   }
   $('tickets-count').textContent = `${d.open.length} open`;
