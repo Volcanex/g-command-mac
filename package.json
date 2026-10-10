@@ -5,7 +5,7 @@
   "description": "G-System desktop app: g-command-web in a window, alert spine notifications, menu-bar status.",
   "main": "src/main/main.js",
   "author": "Gabriel Penman",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "AGPL-3.0-only",
   "private": true,
   "scripts": {
     "start": "electron .",

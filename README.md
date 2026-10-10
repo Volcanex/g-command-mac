@@ -4,7 +4,7 @@ The desktop app for G-System. It wraps g-command-web, the dashboard that runs on
 
 G-System is my agentic development setup. One central server runs the knowledge brain, the alert spine and the dashboard, and other hosts hang off it. This app is one more subscriber on that spine, next to the phone and the TV.
 
-This repo is source-available under the PolyForm Noncommercial 1.0.0 licence. It is not open source.
+This repo is open source under the GNU Affero General Public License v3.0.
 
 ![Main window](docs-screens/main-window.png)
 
@@ -72,6 +72,6 @@ The Mac build is unsigned for now. Hardened runtime and entitlements are set up 
 
 ## Licence
 
-PolyForm Noncommercial 1.0.0, see `LICENSE`. Copyright Gabriel Penman.
+Copyright (C) 2026 Gabriel Penman. Licensed under the GNU Affero General Public License v3.0 only, see `LICENSE`.
 
 The fonts, icon glyphs and colour scales in `src/renderer/static/g/` come from other projects and keep their own licences. `THIRD_PARTY_NOTICES` lists them.

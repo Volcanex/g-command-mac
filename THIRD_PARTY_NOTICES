@@ -1,6 +1,6 @@
 Third-party notices for g-command-mac
 
-The code in this repo is under PolyForm Noncommercial 1.0.0 (see LICENSE). The third-party material below keeps its own licence,
+The code in this repo is under the GNU AGPL v3.0 only (see LICENSE). The third-party material below keeps its own licence,
 and each of those licences still applies to it.
 
 src/renderer/static/g/ is a vendored copy of g-design, which is mine and under the same licence as this repo. The material
