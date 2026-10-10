@@ -104,7 +104,7 @@ What the Mac agent must do, in order:
 5. **Notarise.** Export `APPLE_API_KEY` (path to the .p8), `APPLE_API_KEY_ID`,
    `APPLE_API_ISSUER` (or `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`,
    `APPLE_TEAM_ID`), set `mac.notarize: true`, run `npm run dist:mac`, then
-   `spctl -a -vv` on the built g-command.app and `xcrun stapler validate` on the dmg.
+   `spctl -a -vv` on the built G-Command.app and `xcrun stapler validate` on the dmg.
 6. **Polish.** Replace the tray images in `src/assets/` with final art;
    consider moving `ntfy.token` to the Keychain via `safeStorage`; add a login
    item (`app.setLoginItemSettings`) if the owner wants it at startup.

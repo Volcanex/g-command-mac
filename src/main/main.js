@@ -30,8 +30,10 @@ const debug = (o) => DEBUG && console.log(JSON.stringify(o));
 
 // GCM_USER_DATA isolates a test run from the real profile; it must be set
 // before anything reads userData.
-if (process.env.GCM_USER_DATA) app.setPath('userData', process.env.GCM_USER_DATA);
-app.setName('g-command');
+// The settings folder keeps the lowercase name every install already has,
+// so renaming the app for display never strands config.json or the sign-in.
+app.setPath('userData', process.env.GCM_USER_DATA || path.join(app.getPath('appData'), 'g-command'));
+app.setName('G-Command');
 
 const config = new Config(app.getPath('userData'));
 const ntfy = new NtfySubscriber({ stateDir: app.getPath('userData') });
@@ -80,7 +82,7 @@ function createMainWindow(server) {
     minWidth: 720,
     minHeight: 480,
     show: false,
-    title: 'g-command',
+    title: 'G-Command',
     backgroundColor: '#111113',
     // Standard title bar: an inset one put the traffic lights over the
     // web page's logo, and this app does not own that page's layout.
@@ -107,6 +109,12 @@ function createMainWindow(server) {
     win.loadFile(path.join(__dirname, '..', 'renderer', 'offline.html'), {
       query: { server: server.name, url, reason: desc, command: config.centralServer.url },
     });
+  });
+  // A Mac window is titled by its document: show the page name and drop the
+  // site suffix the web page adds for browser tabs ("Calendar - Command").
+  win.on('page-title-updated', (event, title) => {
+    event.preventDefault();
+    win.setTitle(title.replace(/\s+-\s+[^-]+$/, '') || 'G-Command');
   });
   win.loadURL(server.url);
   win.serverId = server.id;
@@ -215,18 +223,18 @@ function trayIcon() {
 function trayMenu() {
   return Menu.buildFromTemplate([
     { label: 'Show status panel', click: togglePanel },
-    { label: 'Open g-command', click: showMain },
+    { label: 'Open G-Command', click: showMain },
     { type: 'separator' },
     ...PAGES.slice(1).map((p) => ({ label: `Open ${p.label.toLowerCase()}`, click: () => openPage(p.path) })),
     { type: 'separator' },
     { label: 'Refresh', click: refresh },
-    { label: 'Quit g-command', click: () => app.quit() },
+    { label: 'Quit G-Command', click: () => app.quit() },
   ]);
 }
 
 function createTray() {
   tray = new Tray(trayIcon());
-  tray.setToolTip('g-command');
+  tray.setToolTip('G-Command');
   if (isMac) {
     // On macOS a context menu would swallow the left click, so the panel
     // takes the left click and the menu only appears on right click.
@@ -333,7 +341,7 @@ function pushState() {
   if (!tray) return;
   const h = latest.health && latest.health.ok ? latest.health.data : null;
   const issues = h ? h.issues.filter((i) => i.state === 'down' || i.state === 'warn').length : 0;
-  tray.setToolTip(h ? (issues ? `g-command: ${issues} need attention` : 'g-command: all systems up') : 'g-command');
+  tray.setToolTip(h ? (issues ? `G-Command: ${issues} need attention` : 'G-Command: all systems up') : 'G-Command');
   if (isMac) tray.setTitle(issues ? String(issues) : '');
 }
 
@@ -380,7 +388,7 @@ ntfy.on('message', (msg) => {
   debug({ notified: msg.title, target: target.url, supported: Notification.isSupported() });
   if (Notification.isSupported()) {
     const n = new Notification({
-      title: msg.title || 'g-command',
+      title: msg.title || 'G-Command',
       body: msg.message,
       urgency: msg.priority >= 5 ? 'critical' : msg.priority >= 4 ? 'normal' : 'low',
       silent: msg.priority <= 2,
