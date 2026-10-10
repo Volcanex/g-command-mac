@@ -10,6 +10,7 @@ files:
   - src/**/*
   - package.json
   - LICENSE
+  - THIRD_PARTY_NOTICES
   - "!**/*.map"
 asar: true
 

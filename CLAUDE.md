@@ -3,7 +3,8 @@
 The G-System desktop app (Electron): g-command-web in a native window, native
 notifications from the ntfy alert spine, and a menu-bar status panel.
 Companion to g-command-web (`Volcanex/g-command-web`). Built on h on
-2026-10-09, then finished, signed and notarised on the Mac.
+2026-10-09 and finished on the Mac. Builds are unsigned until a Developer ID
+certificate is installed (Mac handoff, below).
 
 **Owner:** Gabriel Penman
 **Role in supersystem:** a renderer and a spine subscriber. Holds no data of its
