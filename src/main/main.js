@@ -48,11 +48,11 @@ let ntfyStatus = { status: 'off', detail: '' };
 let genvStatus = { available: false, reason: 'Not checked yet' };
 
 const PAGES = [
-  { label: 'Home', path: '/', accel: 'CmdOrCtrl+1' },
-  { label: 'System', path: '/system', accel: 'CmdOrCtrl+2' },
-  { label: 'Calendar', path: '/calendar', accel: 'CmdOrCtrl+3' },
-  { label: 'Todos', path: '/todos', accel: 'CmdOrCtrl+4' },
-  { label: 'Tickets', path: '/tickets', accel: 'CmdOrCtrl+5' },
+  { label: 'Full dash', path: '/', accel: 'CmdOrCtrl+1' },
+  { label: 'Life', path: '/home', accel: 'CmdOrCtrl+2' },
+  { label: 'System', path: '/ops', accel: 'CmdOrCtrl+3' },
+  { label: 'Calendar', path: '/calendar', accel: 'CmdOrCtrl+4' },
+  { label: 'Todos', path: '/todos', accel: 'CmdOrCtrl+5' },
 ];
 
 function isOwnUrl(url) {
