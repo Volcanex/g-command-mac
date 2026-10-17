@@ -3,10 +3,12 @@
 // The three at-a-glance feeds for the menu-bar panel. All of them are real
 // endpoints that g-command-web already uses; none is new:
 //
-//   health   GET {brainApi}/api/status                 public, CORS *
+//   health   GET {brainApi}/api/status                 CORS *
 //            (brain L5 snapshot, the same feed g-command-web /system polls)
 //   today    GET {brainApi}/api/todos/calendar?date_from=D&date_to=D
-//            public, CORS * (the same feed g-command-web /calendar renders)
+//            CORS * (the same feed g-command-web /calendar renders)
+//   brainApi off h/b is the keyed base .../k/<key> (BRAIN_PUBLIC); bare /api/
+//   is IP-allowlisted and answers 403.
 //   tickets  GET {central}/api/gadmin_panel/tickets?status=open
 //            behind g-command-web's whole-site cookie gate, so it is fetched
 //            through the server's persistent session: it works once the
