@@ -31,8 +31,11 @@ npm run dist:linux && npm run smoke   # GCM_SMOKE_SERVER, GCM_SMOKE_BRAIN_API: h
 ```
 
 ## Endpoints (all already used by g-command-web; none invented)
-- Health: `GET {brainApi}/api/status`, public, CORS `*`.
-- Today: `GET .../api/todos/calendar?date_from=D&date_to=D`, public. Rows open `/note/{permalink}`.
+- Health: `GET {brainApi}/api/status`, CORS `*`.
+- Today: `GET .../api/todos/calendar?date_from=D&date_to=D`.
+- Both are IP-allowlisted to h, b and localhost on bare `/api/`. Off those hosts `brainApi` must be
+  `BRAIN_PUBLIC` from `/etc/g-secrets/brain-key.env` on h (`https://api.brain.../k/<key>`, no `/api`),
+  or every poll gets 403. The key is a secret: config.json only, never the repo. Rows open `/note/{permalink}`.
 - Tickets: `GET {central}/api/gadmin_panel/tickets?status=open`, behind g-command-web's
   cookie gate (the cookie its `ADMIN_COOKIE` names). Fetched with `session.fromPartition(...).fetch(...,
   {credentials:'include'})`, so it rides the cookie from signing in in the main

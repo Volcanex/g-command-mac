@@ -23,8 +23,8 @@ Nothing here is a new API. The app reads the same endpoints the dashboard alread
 
 | Panel section | Endpoint | Auth |
 |---|---|---|
-| System health | `GET {brainApi}/api/status` | none, public snapshot |
-| Today | `GET {brainApi}/api/todos/calendar?date_from=D&date_to=D` | none |
+| System health | `GET {brainApi}/api/status` | the key in `brainApi`'s path, off the brain's own hosts |
+| Today | `GET {brainApi}/api/todos/calendar?date_from=D&date_to=D` | the key in `brainApi`'s path, off the brain's own hosts |
 | Open tickets | `GET {server}/api/gadmin_panel/tickets?status=open` | the dashboard's sign-in cookie |
 | Alerts | `GET {ntfy}/{topics}/json` | optional bearer token |
 
@@ -32,7 +32,7 @@ The tickets call goes through the central server's own session, so it starts wor
 
 ## Settings
 
-All settings live on the device, in `config.json` inside the app's data folder (`~/Library/Application Support/g-command` on a Mac). The file is created with private permissions on first run and is never part of this repo. A new file points at a g-command-web on the same machine (`http://127.0.0.1:8080`), so set `servers` and `brainApi` to your own hosts. Use **File, Open settings file** to edit it and **File, Reload settings** to apply it.
+All settings live on the device, in `config.json` inside the app's data folder (`~/Library/Application Support/g-command` on a Mac). The file is created with private permissions on first run and is never part of this repo. A new file points at a g-command-web on the same machine (`http://127.0.0.1:8080`), so set `servers` and `brainApi` to your own hosts. The brain API answers bare `/api/` only to its own hosts. From any other device set `brainApi` to the keyed base, `https://api.brain.example.com/k/<key>` (the instance's `BRAIN_PUBLIC`), without a trailing `/api`. The bare host returns 403 on every poll. Use **File, Open settings file** to edit it and **File, Reload settings** to apply it.
 
 ```json
 {
@@ -40,7 +40,7 @@ All settings live on the device, in `config.json` inside the app's data folder (
     { "id": "central", "name": "Central", "url": "https://command.example.com", "central": true }
   ],
   "activeServer": "central",
-  "brainApi": "https://api.brain.example.com",
+  "brainApi": "https://api.brain.example.com/k/<key>",
   "pollSeconds": 60,
   "ntfy": { "server": "https://ntfy.sh", "topics": ["your-topic"], "token": "" },
   "routes": [{ "title": "^deploy", "path": "/crons" }],
