@@ -19,6 +19,7 @@ own; everything it shows comes from g-command-web and the g-brain REST API.
 - `src/main/genv-mac.js`: the g-env-mac link. **Stub**, see below.
 - `src/preload/panel.js`: the only bridge the panel gets (`window.gcm`).
 - `src/renderer/`: panel and offline pages. `command.js` fills their `<meta name="g-command">` with the central server's origin, which `main.js` passes as `?command=`. `src/renderer/static/g/` is g-design, vendored.
+- `scripts/measure.js`: launch-speed harness (cold launch to real content, page switches, reopen), drives the app only through its menu and lifecycle events.
 - `scripts/smoke.js`: headless smoke run under xvfb, writes `docs-screens/` unless given a directory.
 - `build/`: app icon and macOS entitlements. `icon.png` is rendered by `scripts/icon.sh` from
   the g mark vendored from g-design (`src/renderer/static/g/brand/icon.svg`); change the mark in g-design, re-vendor, re-render. `electron-builder.yml`: packaging.
@@ -40,6 +41,14 @@ npm run dist:linux && npm run smoke   # GCM_SMOKE_SERVER, GCM_SMOKE_BRAIN_API: h
 - Alerts: `GET {ntfy.server}/{topics}/json?since=<lastId>`, bearer token optional.
 
 ## Gotchas
+- The main window is a `BaseWindow` holding a pool of `WebContentsView`s, one per `warmPages` entry
+  in config.json. A link or Cmd+number to a warm page swaps views; anything else navigates the active view.
+  Hidden views are put back on their page or reloaded when older than 90 s. Pool renderers start only
+  after the first page settles (starting them earlier cost it about 200 ms), and the window is shown at
+  once rather than on dom-ready (a hidden window loads its page about 200 ms slower).
+- Sign-in goes through Studio SSO (`authOrigins`, default studio.gabrielpenman.com), kept in-app.
+- `INSET_CSS` in main.js pads the web sidebar under the traffic lights and makes the top bar the drag
+  region. It keys on `aside > .brand-row` and `header.topbar`; if the web renames them, update it.
 - **The ntfy topic is a secret.** On ntfy.sh, knowing the topic is enough to read
   and publish. It lives only in config.json; never log the stream URL, never
   commit a topic. The spine's topic is the path of `NTFY_URL` in the
