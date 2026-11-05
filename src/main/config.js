@@ -22,6 +22,14 @@ const DEFAULTS = {
     token: '',
   },
   routes: [],
+  // Hosts the sign-in flow passes through. They stay in-app (same partition)
+  // so the Studio SSO round trip lands back here instead of in the browser.
+  authOrigins: ['https://studio.gabrielpenman.com'],
+  // Pages kept loaded in hidden views so switching to them is a swap, not a
+  // page load. Each costs one renderer, roughly 60 to 100 MB.
+  warmPages: ['/', '/calendar', '/pulse', '/system', '/tickets'],
+  // The page the window showed last, restored on the next launch.
+  lastUrl: '',
   genvMac: {
     path: '',
   },
@@ -72,6 +80,13 @@ function normalise(raw) {
   c.brainApi = String(c.brainApi || DEFAULTS.brainApi).replace(/\/+$/, '');
   c.pollSeconds = Math.max(15, Number(c.pollSeconds) || DEFAULTS.pollSeconds);
   if (!Array.isArray(c.routes)) c.routes = [];
+  c.authOrigins = (Array.isArray(c.authOrigins) ? c.authOrigins : DEFAULTS.authOrigins)
+    .map((o) => { try { return new URL(o).origin; } catch { return null; } })
+    .filter(Boolean);
+  c.warmPages = (Array.isArray(c.warmPages) ? c.warmPages : DEFAULTS.warmPages)
+    .filter((p) => typeof p === 'string' && p.startsWith('/'))
+    .slice(0, 8);
+  if (typeof c.lastUrl !== 'string') c.lastUrl = '';
   return c;
 }
 
@@ -128,6 +143,14 @@ class Config {
       return null;
     }
     return this.data.servers.find((s) => s.url === origin) || null;
+  }
+
+  isAuthUrl(url) {
+    try {
+      return this.data.authOrigins.includes(new URL(url).origin);
+    } catch {
+      return false;
+    }
   }
 }
 

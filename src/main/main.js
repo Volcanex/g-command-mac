@@ -4,6 +4,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const {
   app,
+  BaseWindow,
   BrowserWindow,
   Menu,
   Notification,
@@ -13,6 +14,7 @@ const {
   screen,
   session,
   shell,
+  WebContentsView,
 } = require('electron');
 
 const { Config, partitionFor } = require('./config');
@@ -38,7 +40,6 @@ app.setName('G-Command');
 const config = new Config(app.getPath('userData'));
 const ntfy = new NtfySubscriber({ stateDir: app.getPath('userData') });
 
-let mainWindow = null;
 let panel = null;
 let tray = null;
 let quitting = false;
@@ -47,21 +48,42 @@ let latest = { at: null, health: null, today: null, tickets: null };
 let ntfyStatus = { status: 'off', detail: '' };
 let genvStatus = { available: false, reason: 'Not checked yet' };
 
+// Cmd+1..8 map to the web's own sidebar pages, in its order.
 const PAGES = [
-  { label: 'Home', path: '/', accel: 'CmdOrCtrl+1' },
-  { label: 'System', path: '/system', accel: 'CmdOrCtrl+2' },
-  { label: 'Calendar', path: '/calendar', accel: 'CmdOrCtrl+3' },
-  { label: 'Todos', path: '/todos', accel: 'CmdOrCtrl+4' },
-  { label: 'Tickets', path: '/tickets', accel: 'CmdOrCtrl+5' },
-];
+  { label: 'Home', path: '/' },
+  { label: 'Chat', path: '/chat' },
+  { label: 'Calendar', path: '/calendar' },
+  { label: 'Pulse', path: '/pulse' },
+  { label: 'Services', path: '/system' },
+  { label: 'Compute', path: '/compute' },
+  { label: 'Tickets', path: '/tickets' },
+  { label: 'Projects', path: '/projects' },
+].map((p, i) => ({ ...p, accel: `CmdOrCtrl+${i + 1}` }));
+
+const BG = '#111113';
+// A hidden warm page older than this is reloaded in the background, so a
+// swap never shows data more than a minute and a half old.
+const STALE_MS = 90 * 1000;
+const timing = (event) => process.env.GCM_TIMING && console.log(JSON.stringify({ timing: event, at: Date.now() }));
+
+// The web page owns the whole window. Its sidebar is pushed down by the
+// height of the traffic lights and its top bar becomes the drag handle, so
+// the native chrome is the three buttons and nothing else.
+const INSET_CSS = `
+aside:has(> .brand-row) { padding-top: 28px !important; -webkit-app-region: drag; }
+aside:has(> .brand-row) > * { -webkit-app-region: no-drag; }
+header.topbar { -webkit-app-region: drag; }
+header.topbar a, header.topbar button, header.topbar input, header.topbar select,
+header.topbar [role="button"], header.topbar [tabindex] { -webkit-app-region: no-drag; }
+`;
 
 function isOwnUrl(url) {
-  return !!config.serverForUrl(url);
+  return !!config.serverForUrl(url) || config.isAuthUrl(url);
 }
 
 function hardenContents(contents) {
   contents.setWindowOpenHandler(({ url }) => {
-    if (isOwnUrl(url)) {
+    if (config.serverForUrl(url)) {
       openUrl(url);
     } else if (/^(https?|mailto):/i.test(url)) {
       shell.openExternal(url);
@@ -75,71 +97,242 @@ function hardenContents(contents) {
   });
 }
 
-function createMainWindow(server) {
-  const win = new BrowserWindow({
+// ---------------------------------------------------------------- main window
+//
+// One BaseWindow holds a small pool of WebContentsViews, one per warm page.
+// Only the active view is visible; the rest sit loaded behind it. A link to a
+// warm page swaps views instead of loading, and every other link navigates
+// the active view exactly as a browser tab would.
+
+let main = null; // { win, server, views: Map<key, view>, active: key, trail: [{ key, url }] }
+let saveTimer = null;
+let refreshTimer = null;
+
+function warmKey(server, url) {
+  try {
+    const u = new URL(url);
+    if (u.origin !== server.url || u.search || u.hash) return null;
+    return config.data.warmPages.includes(u.pathname) ? u.pathname : null;
+  } catch {
+    return null;
+  }
+}
+
+function homeUrl(key) {
+  return new URL(key, main.server.url).toString();
+}
+
+function activeView() {
+  return main && main.views.get(main.active);
+}
+
+function activeContents() {
+  const v = activeView();
+  return v ? v.webContents : null;
+}
+
+function fitView(view) {
+  const { width, height } = main.win.getContentBounds();
+  view.setBounds({ x: 0, y: 0, width, height });
+}
+
+function rememberUrl(url) {
+  if (!config.serverForUrl(url)) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    if (config.data.lastUrl !== url) config.update({ lastUrl: url });
+  }, 1000);
+}
+
+function createView(key, url) {
+  const server = main.server;
+  const view = new WebContentsView({
+    webPreferences: {
+      partition: partitionFor(server),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      backgroundThrottling: true,
+    },
+  });
+  view.setBackgroundColor(BG);
+  view.setVisible(false);
+  view.key = key;
+  view.loadedAt = 0;
+  const wc = view.webContents;
+  hardenContents(wc);
+  wc.on('will-navigate', (event, target) => {
+    if (event.defaultPrevented) return;
+    const k = warmKey(server, target);
+    if (k && k !== view.key && main.views.has(k)) {
+      event.preventDefault();
+      showView(k, target);
+    }
+  });
+  wc.on('dom-ready', () => {
+    if (isMac && config.serverForUrl(wc.getURL())) wc.insertCSS(INSET_CSS).catch(() => {});
+  });
+  wc.on('did-finish-load', () => {
+    view.loadedAt = Date.now();
+  });
+  const onNav = (_e, navUrl) => {
+    if (main && main.active === view.key) {
+      rememberUrl(navUrl);
+      updateTitle();
+    }
+  };
+  wc.on('did-navigate', onNav);
+  wc.on('did-navigate-in-page', onNav);
+  wc.on('page-title-updated', () => main && main.active === view.key && updateTitle());
+  wc.on('did-fail-load', (_e, code, desc, failedUrl, isMainFrame) => {
+    if (!isMainFrame || code === -3) return;
+    wc.loadFile(path.join(__dirname, '..', 'renderer', 'offline.html'), {
+      query: { server: server.name, url: failedUrl, reason: desc, command: config.centralServer.url },
+    });
+  });
+  main.win.contentView.addChildView(view);
+  fitView(view);
+  main.views.set(key, view);
+  wc.loadURL(url);
+  return view;
+}
+
+// A Mac window is titled by its document: the page name without the site
+// suffix the web adds for browser tabs ("Calendar - Command").
+function updateTitle() {
+  const wc = activeContents();
+  const title = wc ? wc.getTitle() : '';
+  main.win.setTitle(title.replace(/\s+-\s+[^-]+$/, '') || 'G-Command');
+}
+
+function showView(key, url, { record = true } = {}) {
+  const prev = activeView();
+  const next = main.views.get(key);
+  if (!next) return;
+  if (prev && prev !== next && record) main.trail.push({ key: prev.key, url: prev.webContents.getURL() });
+  if (main.trail.length > 50) main.trail.shift();
+  main.active = key;
+  fitView(next);
+  next.setVisible(true);
+  if (prev && prev !== next) prev.setVisible(false);
+  const wc = next.webContents;
+  if (url && wc.getURL() !== url) wc.loadURL(url);
+  if (main.win.isFocused()) wc.focus();
+  rememberUrl(wc.getURL() || url);
+  updateTitle();
+  timing({ swap: key });
+}
+
+// Warm pages load one after another once the first page is up, so they
+// never compete with it for the network on a cold launch.
+async function warmPool() {
+  for (const key of config.data.warmPages) {
+    if (!main || main.views.has(key)) continue;
+    const view = createView(key, homeUrl(key));
+    await new Promise((r) => {
+      view.webContents.once('did-stop-loading', r);
+      setTimeout(r, 8000);
+    });
+  }
+  timing({ warm: [...main.views.keys()] });
+}
+
+// Hidden warm pages drift (a link followed in them) or go stale; put them
+// back on their page or reload them while nobody is looking.
+function refreshHidden() {
+  if (!main) return;
+  const windowHidden = !main.win.isVisible();
+  for (const view of main.views.values()) {
+    const wc = view.webContents;
+    if (wc.isLoading()) continue;
+    const isActive = view.key === main.active;
+    if (isActive && !windowHidden) continue;
+    const onHome = wc.getURL() === homeUrl(view.key) || warmKey(main.server, wc.getURL()) === view.key;
+    if (!view.key.startsWith('/')) continue;
+    if (!onHome && !isActive) wc.loadURL(homeUrl(view.key));
+    else if (onHome && Date.now() - view.loadedAt > STALE_MS) wc.reload();
+  }
+}
+
+function createMain(server) {
+  const win = new BaseWindow({
     width: 1280,
     height: 840,
     minWidth: 720,
     minHeight: 480,
     show: false,
     title: 'G-Command',
-    backgroundColor: '#111113',
-    // Standard title bar: an inset one put the traffic lights over the
-    // web page's logo, and this app does not own that page's layout.
-    titleBarStyle: 'default',
-    webPreferences: {
-      partition: partitionFor(server),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-    },
+    backgroundColor: BG,
+    titleBarStyle: isMac ? 'hiddenInset' : 'default',
+    trafficLightPosition: { x: 16, y: 10 },
   });
-  hardenContents(win.webContents);
-  win.once('ready-to-show', () => {
-    if (!SHOTS) win.show();
+  const state = { win, server, views: new Map(), active: null, trail: [] };
+  main = state;
+  const last = config.data.lastUrl;
+  const start = last && config.serverForUrl(last) && config.serverForUrl(last).id === server.id ? last : server.url;
+  const key = warmKey(server, start) || 'first';
+  const view = createView(key, start);
+  showView(key, null, { record: false });
+  // Show at once. The window's background is the page's own colour, so the
+  // empty frame reads as the page arriving, and a page loading in a hidden
+  // window is deprioritised by Chromium: waiting for dom-ready measured about
+  // 200 ms slower to real content than showing straight away.
+  timing({ shown: true });
+  if (!SHOTS && !hiddenLaunch) win.show();
+  // The pool starts only after the first page has settled: its renderers
+  // starting earlier cost the first page about 200 ms of its own fetches.
+  const wc0 = view.webContents;
+  const startPool = () => setTimeout(warmPool, 1500);
+  if (wc0.isLoading()) wc0.once('did-stop-loading', startPool);
+  else startPool();
+  win.on('resize', () => {
+    const v = activeView();
+    if (v) fitView(v);
   });
+  win.on('focus', () => {
+    const wc = activeContents();
+    if (wc) wc.focus();
+  });
+  // Closing hides: the renderers stay alive, so reopening is instant.
   win.on('close', (event) => {
     if (!quitting) {
       event.preventDefault();
       win.hide();
     }
   });
-  win.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
-    if (!isMainFrame || code === -3) return;
-    win.loadFile(path.join(__dirname, '..', 'renderer', 'offline.html'), {
-      query: { server: server.name, url, reason: desc, command: config.centralServer.url },
-    });
+  win.on('closed', () => {
+    for (const v of state.views.values()) v.webContents.close();
+    if (main === state) main = null;
   });
-  // A Mac window is titled by its document: show the page name and drop the
-  // site suffix the web page adds for browser tabs ("Calendar - Command").
-  win.on('page-title-updated', (event, title) => {
-    event.preventDefault();
-    win.setTitle(title.replace(/\s+-\s+[^-]+$/, '') || 'G-Command');
-  });
-  win.loadURL(server.url);
-  win.serverId = server.id;
-  return win;
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(refreshHidden, 30 * 1000);
+  return main;
 }
 
 // Each server has its own persistent partition, so signing in to one never
 // leaks a cookie to another, and switching servers rebuilds the window.
 function ensureMainWindow() {
   const server = config.activeServer;
-  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.serverId === server.id) return mainWindow;
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.destroy();
+  if (main && !main.win.isDestroyed() && main.server.id === server.id) return main;
+  if (main && !main.win.isDestroyed()) {
+    const old = main.win;
+    quitting = true;
+    old.close();
+    quitting = false;
   }
-  mainWindow = createMainWindow(server);
-  return mainWindow;
+  return createMain(server);
 }
 
+let hiddenLaunch = false;
+
 function showMain() {
-  const win = ensureMainWindow();
+  const m = ensureMainWindow();
   if (!SHOTS) {
-    win.show();
-    win.focus();
+    hiddenLaunch = false;
+    m.win.show();
+    m.win.focus();
   }
-  return win;
+  return m;
 }
 
 function openUrl(url) {
@@ -148,8 +341,12 @@ function openUrl(url) {
     config.update({ activeServer: server.id });
     buildMenu();
   }
-  const win = showMain();
-  if (win.webContents.getURL() !== url) win.loadURL(url);
+  const m = showMain();
+  const key = warmKey(m.server, url);
+  if (key && m.views.has(key)) return showView(key, url);
+  const wc = activeContents();
+  if (wc && wc.getURL() !== url) wc.loadURL(url);
+  timing({ navigate: url });
 }
 
 function openPage(p, serverId) {
@@ -157,9 +354,22 @@ function openPage(p, serverId) {
   openUrl(new URL(p, server.url).toString());
 }
 
+function goBack() {
+  const wc = activeContents();
+  if (!wc) return;
+  if (wc.navigationHistory.canGoBack()) return wc.navigationHistory.goBack();
+  const prev = main.trail.pop();
+  if (prev && main.views.has(prev.key)) showView(prev.key, prev.url, { record: false });
+}
+
+function goForward() {
+  const wc = activeContents();
+  if (wc && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
+}
+
 function switchServer(id) {
   if (id === config.data.activeServer) return showMain();
-  config.update({ activeServer: id });
+  config.update({ activeServer: id, lastUrl: '' });
   buildMenu();
   showMain();
   refresh();
@@ -190,16 +400,37 @@ function buildMenu() {
       submenu: [
         ...PAGES.map((p) => ({ label: p.label, accelerator: p.accel, click: () => openPage(p.path) })),
         { type: 'separator' },
-        { label: 'Back', accelerator: 'CmdOrCtrl+[', click: () => mainWindow && mainWindow.webContents.navigationHistory.goBack() },
-        { label: 'Forward', accelerator: 'CmdOrCtrl+]', click: () => mainWindow && mainWindow.webContents.navigationHistory.goForward() },
+        { label: 'Back', accelerator: 'CmdOrCtrl+[', click: goBack },
+        { label: 'Forward', accelerator: 'CmdOrCtrl+]', click: goForward },
       ],
     },
     { label: 'Server', submenu: servers },
-    { role: 'viewMenu' },
+    {
+      // Custom rather than role items: the roles act on a focused
+      // BrowserWindow, and the page here lives in a WebContentsView.
+      label: 'View',
+      submenu: [
+        { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: () => activeContents() && activeContents().reload() },
+        { label: 'Force reload', accelerator: 'Shift+CmdOrCtrl+R', click: () => activeContents() && activeContents().reloadIgnoringCache() },
+        { label: 'Toggle developer tools', accelerator: 'Alt+CmdOrCtrl+I', click: () => activeContents() && activeContents().toggleDevTools() },
+        { type: 'separator' },
+        { label: 'Actual size', accelerator: 'CmdOrCtrl+0', click: () => zoom(0) },
+        { label: 'Zoom in', accelerator: 'CmdOrCtrl+Plus', click: () => zoom(+0.5) },
+        { label: 'Zoom out', accelerator: 'CmdOrCtrl+-', click: () => zoom(-0.5) },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
     { role: 'windowMenu' },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
   if (tray && !isMac) tray.setContextMenu(trayMenu());
+}
+
+// Zoom is per origin in Chromium, so one view's zoom applies to all of them.
+function zoom(step) {
+  const wc = activeContents();
+  if (wc) wc.setZoomLevel(step === 0 ? 0 : wc.getZoomLevel() + step);
 }
 
 function reloadConfig() {
@@ -423,11 +654,12 @@ ipcMain.on('gcm:open', (_e, target) => {
 async function captureScreens() {
   fs.mkdirSync(SHOTS, { recursive: true });
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  const win = ensureMainWindow();
-  await new Promise((r) => (win.webContents.isLoading() ? win.webContents.once('did-stop-loading', r) : r()));
-  win.showInactive();
+  const m = ensureMainWindow();
+  const wc = activeContents();
+  await new Promise((r) => (wc.isLoading() ? wc.once('did-stop-loading', r) : r()));
+  m.win.showInactive();
   await wait(2500);
-  fs.writeFileSync(path.join(SHOTS, 'main-window.png'), (await win.webContents.capturePage()).toPNG());
+  fs.writeFileSync(path.join(SHOTS, 'main-window.png'), (await wc.capturePage()).toPNG());
   // Sign in only after the main window is captured, so the docs shot shows
   // the login page rather than live data.
   if (process.env.GCM_LOGIN_PASSWORD) await testLogin(process.env.GCM_LOGIN_PASSWORD);
@@ -484,7 +716,11 @@ if (!SHOTS && !app.requestSingleInstanceLock()) {
     startPolling();
     if (SHOTS) return captureScreens();
     if (process.env.GCM_LOGIN_PASSWORD) await testLogin(process.env.GCM_LOGIN_PASSWORD);
-    showMain();
+    // Launched at login with --hidden: build and warm the window but keep it
+    // off screen until the dock icon or tray asks for it.
+    hiddenLaunch = process.argv.includes('--hidden');
+    if (hiddenLaunch) ensureMainWindow();
+    else showMain();
     refresh();
   });
 
