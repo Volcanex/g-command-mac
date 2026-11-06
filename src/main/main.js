@@ -75,6 +75,14 @@ aside:has(> .brand-row) { -webkit-app-region: drag; }
 aside:has(> .brand-row) > * { -webkit-app-region: no-drag; }
 header.topbar { -webkit-app-region: drag; }
 header.topbar a, header.topbar button, header.topbar input, header.topbar select,
+.g-shell[data-rail="collapsed"]:not([data-rail-peek]) > aside:has(> .brand-row) {
+  border-right-color: transparent !important;
+  background-image: linear-gradient(var(--border), var(--border));
+  background-origin: border-box;
+  background-size: 1px calc(100% - 47px);
+  background-position: right bottom;
+  background-repeat: no-repeat;
+}
 header.topbar [role="button"], header.topbar [tabindex] { -webkit-app-region: no-drag; }
 `;
 
