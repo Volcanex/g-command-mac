@@ -30,6 +30,8 @@ const DEFAULTS = {
   warmPages: ['/', '/calendar', '/pulse', '/system', '/tickets'],
   // The page the window showed last, restored on the next launch.
   lastUrl: '',
+  // The G Studio the owner key signs in to (studio-key.js). HTTPS only.
+  studioOrigin: 'https://studio.gabrielpenman.com',
   genvMac: {
     path: '',
   },
@@ -87,6 +89,11 @@ function normalise(raw) {
     .filter((p) => typeof p === 'string' && p.startsWith('/'))
     .slice(0, 8);
   if (typeof c.lastUrl !== 'string') c.lastUrl = '';
+  try {
+    c.studioOrigin = new URL(c.studioOrigin).origin;
+  } catch {
+    c.studioOrigin = DEFAULTS.studioOrigin;
+  }
   return c;
 }
 

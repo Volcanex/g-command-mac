@@ -132,3 +132,55 @@ test('health lists failing services and probed dependencies only', async () => {
   assert.deepStrictEqual(h.issues.map((i) => i.id), ['b', 'y']);
   assert.strictEqual(h.level, 'down');
 });
+
+// ---------------------------------------------------------------- studio owner key
+
+const studioKey = require('../src/main/studio-key');
+
+const fakeSafe = {
+  isEncryptionAvailable: () => true,
+  encryptString: (s) => Buffer.from(`enc:${s}`),
+  decryptString: (b) => b.toString().replace(/^enc:/, ''),
+};
+const GOOD = `gsok1.${'a'.repeat(11)}.${'b'.repeat(43)}`;
+
+test('owner key is stored encrypted, 0600, and only if well formed', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcm-key-'));
+  assert.throws(() => studioKey.store(dir, fakeSafe, 'nope'));
+  assert.strictEqual(studioKey.store(dir, fakeSafe, `${GOOD}\n`), 'a'.repeat(11));
+  assert.strictEqual(fs.statSync(studioKey.keyFile(dir)).mode & 0o777, 0o600);
+  assert.strictEqual(studioKey.load(dir, fakeSafe), GOOD);
+  assert.ok(studioKey.remove(dir));
+  assert.strictEqual(studioKey.load(dir, fakeSafe), null);
+});
+
+test('owner key only goes to https or a loopback test studio', () => {
+  assert.strictEqual(studioKey.usableOrigin('https://studio.example.com/x'), 'https://studio.example.com');
+  assert.strictEqual(studioKey.usableOrigin('http://127.0.0.1:9'), 'http://127.0.0.1:9');
+  assert.strictEqual(studioKey.usableOrigin('http://studio.example.com'), null);
+  assert.strictEqual(studioKey.usableOrigin('garbage'), null);
+});
+
+test('ensureSession trades the key only when the studio says signed out', async () => {
+  const calls = [];
+  const jar = [];
+  const ses = {
+    fetch: async (url, opts = {}) => {
+      calls.push({ url, opts });
+      if (url.endsWith('/api/auth/me')) return { ok: jar.length > 0, status: jar.length ? 200 : 401 };
+      return { ok: true, status: 200, json: async () => ({ token: 't0k', cookie_name: '__Host-gs_session', expires_at: 2e9 }) };
+    },
+    cookies: { set: async (c) => jar.push(c), flushStore: async () => {} },
+  };
+  const origin = 'https://studio.example.com';
+  assert.strictEqual(await studioKey.ensureSession({ ses, origin, key: null }), 'no-key');
+  assert.strictEqual(await studioKey.ensureSession({ ses, origin: 'http://evil.example', key: GOOD }), 'bad-origin');
+  assert.strictEqual(calls.length, 0);
+  assert.strictEqual(await studioKey.ensureSession({ ses, origin, key: GOOD }), 'renewed');
+  assert.deepStrictEqual(JSON.parse(calls[1].opts.body), { key: GOOD });
+  assert.strictEqual(calls[1].opts.headers['X-GS'], '1');
+  assert.strictEqual(jar[0].name, '__Host-gs_session');
+  assert.ok(jar[0].secure && jar[0].httpOnly);
+  assert.strictEqual(await studioKey.ensureSession({ ses, origin, key: GOOD }), 'signed-in');
+  assert.strictEqual(calls.length, 3);
+});

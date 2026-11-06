@@ -11,6 +11,7 @@ const {
   Tray,
   ipcMain,
   nativeImage,
+  safeStorage,
   screen,
   session,
   shell,
@@ -22,6 +23,7 @@ const { NtfySubscriber } = require('./ntfy');
 const { route } = require('./routes');
 const status = require('./status');
 const genvMac = require('./genv-mac');
+const studioKey = require('./studio-key');
 
 const isMac = process.platform === 'darwin';
 const ASSETS = path.join(__dirname, '..', 'assets');
@@ -637,7 +639,10 @@ function refresh() {
 
 function startPolling() {
   clearInterval(pollTimer);
-  pollTimer = setInterval(refresh, config.data.pollSeconds * 1000);
+  pollTimer = setInterval(() => {
+    refresh();
+    ensureStudioSessions().catch(() => {});
+  }, config.data.pollSeconds * 1000);
 }
 
 // ---------------------------------------------------------------- ntfy
@@ -737,7 +742,57 @@ function summarise(s) {
 
 // ---------------------------------------------------------------- lifecycle
 
-if (!SHOTS && !app.requestSingleInstanceLock()) {
+// ---------------------------------------------------------------- studio owner key
+//
+// The embedded G Studio signs in as Gabriel with the owner key (studio-key.js).
+// The key stays in this process; pages only ever see the session cookie.
+
+const STUDIO_ORIGIN = () => config.data.studioOrigin || config.data.authOrigins[0] || '';
+const KEY_FLAG = process.argv.includes('--install-studio-key');
+const UNKEY_FLAG = process.argv.includes('--remove-studio-key');
+
+async function ensureStudioSessions() {
+  const key = studioKey.load(app.getPath('userData'), safeStorage);
+  if (!key) return [];
+  const results = [];
+  for (const server of config.data.servers) {
+    const ses = session.fromPartition(partitionFor(server));
+    const r = await studioKey.ensureSession({ ses, origin: STUDIO_ORIGIN(), key });
+    results.push(r);
+    if (r === 'renewed' && main && main.server.id === server.id) {
+      // A studio page that already gave up on sign-in starts again, signed in.
+      for (const v of main.views.values()) {
+        try {
+          if (new URL(v.webContents.getURL()).pathname.startsWith('/studio')) v.webContents.reload();
+        } catch {}
+      }
+    }
+  }
+  debug({ studioSession: results });
+  return results;
+}
+
+async function installStudioKey() {
+  const dir = app.getPath('userData');
+  try {
+    if (UNKEY_FLAG) {
+      console.log(studioKey.remove(dir) ? 'Removed the studio owner key.' : 'No studio owner key was installed.');
+    } else {
+      const id = studioKey.store(dir, safeStorage, await studioKey.readStdin());
+      console.log(`Installed studio owner key ${id}.`);
+    }
+    app.exit(0);
+  } catch (err) {
+    console.error(err.message);
+    app.exit(1);
+  }
+}
+
+if (KEY_FLAG || UNKEY_FLAG) {
+  // Setup only: `... owner-key mint | G-Command --install-studio-key`. Runs
+  // beside a running app (no single-instance lock) and opens no window.
+  app.whenReady().then(installStudioKey);
+} else if (!SHOTS && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', showMain);
@@ -756,6 +811,8 @@ if (!SHOTS && !app.requestSingleInstanceLock()) {
     if (hiddenLaunch) ensureMainWindow();
     else showMain();
     refresh();
+    // Not awaited: a renewal reloads any studio page that loaded signed out.
+    ensureStudioSessions().catch(() => {});
   });
 
   app.on('activate', showMain);

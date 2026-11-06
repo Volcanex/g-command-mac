@@ -47,6 +47,13 @@ npm run dist:linux && npm run smoke   # GCM_SMOKE_SERVER, GCM_SMOKE_BRAIN_API: h
   after the first page settles (starting them earlier cost it about 200 ms), and the window is shown at
   once rather than on dom-ready (a hidden window loads its page about 200 ms slower).
 - Sign-in goes through Studio SSO (`authOrigins`, default studio.gabrielpenman.com), kept in-app.
+- G Studio signs in by itself with the owner key (`src/main/studio-key.js`, g-studio contracts.md
+  "Owner key"). The key is safeStorage-encrypted in userData `studio-owner-key.bin` (0600), never in
+  config.json, a renderer or a log. At launch and every poll the main process asks
+  `{studioOrigin}/api/auth/me` in each server partition; on 401 it posts the key to
+  `/api/app/owner-key` (HTTPS only, loopback http for tests) and sets `__Host-gs_session` there.
+  Install: `ssh ... 'gstudio owner-key mint' | "<app binary>" --install-studio-key` (stdin; the same
+  binary that runs the app, so the same Keychain item). `--remove-studio-key` deletes it.
 - `INSET_CSS` in main.js pads the web sidebar under the traffic lights and makes the top bar the drag
   region. It keys on `aside > .brand-row` and `header.topbar`; if the web renames them, update it.
 - **The ntfy topic is a secret.** On ntfy.sh, knowing the topic is enough to read
