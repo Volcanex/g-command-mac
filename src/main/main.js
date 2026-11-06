@@ -70,7 +70,8 @@ const timing = (event) => process.env.GCM_TIMING && console.log(JSON.stringify({
 // height of the traffic lights and its top bar becomes the drag handle, so
 // the native chrome is the three buttons and nothing else.
 const INSET_CSS = `
-aside:has(> .brand-row) { padding-top: 40px !important; -webkit-app-region: drag; }
+aside:has(> .brand-row) { -webkit-app-region: drag; }
+.g-shell > aside > .brand-row { padding-top: calc(var(--sp-3) + 40px) !important; }
 aside:has(> .brand-row) > * { -webkit-app-region: no-drag; }
 header.topbar { -webkit-app-region: drag; }
 header.topbar a, header.topbar button, header.topbar input, header.topbar select,
