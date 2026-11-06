@@ -50,9 +50,10 @@ let latest = { at: null, health: null, today: null, tickets: null };
 let ntfyStatus = { status: 'off', detail: '' };
 let genvStatus = { available: false, reason: 'Not checked yet' };
 
-// Cmd+1..8 map to the web's own sidebar pages, in its order.
+// Cmd+1..9 map to the web's own sidebar pages, in its order.
 const PAGES = [
   { label: 'Home', path: '/' },
+  { label: 'Studio', path: '/studio' },
   { label: 'Chat', path: '/chat' },
   { label: 'Calendar', path: '/calendar' },
   { label: 'Pulse', path: '/pulse' },
@@ -171,8 +172,13 @@ function fitView(view) {
   view.setBounds({ x: 0, y: 0, width, height });
 }
 
+// Never reopen on a sign-in step or an error page: launching into a 404 or a
+// spent auth link looks like the app is broken.
+const NO_RESTORE = /^\/(signin|login|logout|auth|oauth)(\/|$)/;
+
 function rememberUrl(url) {
   if (!config.serverForUrl(url)) return;
+  try { if (NO_RESTORE.test(new URL(url).pathname)) return; } catch (e) { return; }
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     if (config.data.lastUrl !== url) config.update({ lastUrl: url });
@@ -211,9 +217,9 @@ function createView(key, url) {
   wc.on('did-finish-load', () => {
     view.loadedAt = Date.now();
   });
-  const onNav = (_e, navUrl) => {
+  const onNav = (_e, navUrl, code) => {
     if (main && main.active === view.key) {
-      rememberUrl(navUrl);
+      if (!(code >= 400)) rememberUrl(navUrl);
       updateTitle();
     }
   };
