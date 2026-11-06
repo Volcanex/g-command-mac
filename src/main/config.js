@@ -24,7 +24,7 @@ const DEFAULTS = {
   routes: [],
   // Hosts the sign-in flow passes through. They stay in-app (same partition)
   // so the Studio SSO round trip lands back here instead of in the browser.
-  authOrigins: ['https://studio.gabrielpenman.com'],
+  authOrigins: ['https://studio.gabrielpenman.com', 'https://accounts.google.com'],
   // Pages kept loaded in hidden views so switching to them is a swap, not a
   // page load. Each costs one renderer, roughly 60 to 100 MB.
   warmPages: ['/', '/calendar', '/pulse', '/system', '/tickets'],

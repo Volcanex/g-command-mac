@@ -78,6 +78,30 @@ header.topbar a, header.topbar button, header.topbar input, header.topbar select
 header.topbar [role="button"], header.topbar [tabindex] { -webkit-app-region: no-drag; }
 `;
 
+// The web's rail reads its pinned/collapsed choice from localStorage once, at
+// page load. Warm pages stay loaded for the whole session, so a choice made in
+// one view never reached the others and a swap showed the old state. Mirror
+// the storage event into each page's own shell so every view follows the last
+// choice.
+const RAIL_SYNC_JS = `
+if (!window.__gcmRailSync) {
+  window.__gcmRailSync = true;
+  addEventListener('storage', (e) => {
+    if (!e.key || !/^g-rail-[^.]*$/.test(e.key) || e.key.includes('group') || !e.newValue) return;
+    const shell = document.querySelector('body > .g-shell, .g-shell');
+    if (!shell) return;
+    const collapsed = e.newValue === 'collapsed';
+    shell.setAttribute('data-rail', collapsed ? 'collapsed' : e.newValue);
+    shell.removeAttribute('data-rail-peek');
+    shell.querySelectorAll(':scope > aside .g-rail-toggle').forEach((b) => {
+      const label = collapsed ? 'Keep open' : 'Collapse';
+      b.setAttribute('aria-label', label);
+      b.setAttribute('data-tip', label);
+      b.setAttribute('aria-pressed', collapsed ? 'false' : 'true');
+    });
+  });
+}`;
+
 function isOwnUrl(url) {
   return !!config.serverForUrl(url) || config.isAuthUrl(url);
 }
@@ -172,6 +196,7 @@ function createView(key, url) {
   });
   wc.on('dom-ready', () => {
     if (isMac && config.serverForUrl(wc.getURL())) wc.insertCSS(INSET_CSS).catch(() => {});
+    if (config.serverForUrl(wc.getURL())) wc.executeJavaScript(RAIL_SYNC_JS).catch(() => {});
   });
   wc.on('did-finish-load', () => {
     view.loadedAt = Date.now();
