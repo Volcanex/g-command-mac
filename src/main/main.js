@@ -77,12 +77,17 @@ const timing = (event) => process.env.GCM_TIMING && console.log(JSON.stringify({
 // The web page owns the whole window. Its sidebar is pushed down by the
 // height of the traffic lights and its top bar becomes the drag handle, so
 // the native chrome is the three buttons and nothing else.
+// The content area's top-left corner is rounded where the top bar's rule meets the rail's,
+// and the page title is 24px (twice the 12px traffic light) with its cap top level with the
+// lights' top (y 12). Studio's own shell, mounted in /studio, gets the same; the Command shell
+// round it has no top bar there, so it keeps the plain rail line.
 const INSET_CSS = `
 aside:has(> .brand-row) { -webkit-app-region: drag; }
 .g-shell > aside > .brand-row { padding-top: calc(var(--sp-3) + 40px) !important; }
 aside:has(> .brand-row) > * { -webkit-app-region: no-drag; }
 header.topbar { -webkit-app-region: drag; }
 header.topbar a, header.topbar button, header.topbar input, header.topbar select,
+header.topbar [role="button"], header.topbar [tabindex] { -webkit-app-region: no-drag; }
 .g-shell[data-rail="collapsed"]:not([data-rail-peek]) > aside:has(> .brand-row) {
   border-right-color: transparent !important;
   background-image: linear-gradient(var(--border), var(--border));
@@ -91,7 +96,22 @@ header.topbar a, header.topbar button, header.topbar input, header.topbar select
   background-position: right bottom;
   background-repeat: no-repeat;
 }
-header.topbar [role="button"], header.topbar [tabindex] { -webkit-app-region: no-drag; }
+.g-shell:not(body.studio-page):not([data-rail-peek]) > aside:has(> .brand-row) {
+  border-right-color: transparent !important;
+  background-image: none;
+}
+.g-shell:not(body.studio-page):has(> aside > .brand-row) > main { background: var(--surface-1); }
+.g-shell:not(body.studio-page):has(> aside > .brand-row) > main > header.topbar { border-bottom-color: transparent; }
+.g-shell:not(body.studio-page):has(> aside > .brand-row) > main > :is(.content, .g-status) {
+  background: var(--bg); border-left: 1px solid var(--border);
+}
+.g-shell:not(body.studio-page):has(> aside > .brand-row) > main > .content {
+  border-top: 1px solid var(--border-subtle); border-top-left-radius: var(--radius-card, 12px);
+}
+.g-shell:has(> aside > .brand-row) > main > header.topbar :is(.topbar-crumbs, .topbar-title, .page-title) {
+  font-size: 24px; line-height: 32px;
+}
+.g-shell:has(> aside > .brand-row) > main > header.topbar > :is(.topbar-crumbs, .topbar-title, .page-title) { position: relative; top: -2px; }
 `;
 
 // The web's rail reads its pinned/collapsed choice from localStorage once, at
