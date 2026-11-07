@@ -8,12 +8,9 @@ const {
   BrowserWindow,
   Menu,
   Notification,
-  Tray,
   ipcMain,
-  nativeImage,
   powerSaveBlocker,
   safeStorage,
-  screen,
   session,
   shell,
   WebContentsView,
@@ -26,9 +23,9 @@ const status = require('./status');
 const genvMac = require('./genv-mac');
 const { Runner } = require('./runner');
 const studioKey = require('./studio-key');
+const { MAC_PATH, isMacUrl, clampRect } = require('./mac-page');
 
 const isMac = process.platform === 'darwin';
-const ASSETS = path.join(__dirname, '..', 'assets');
 const SHOTS = process.env.GCM_SCREENSHOTS || '';
 const REDACT = process.env.GCM_REDACT === '1';
 const DEBUG = process.env.GCM_DEBUG === '1';
@@ -44,8 +41,7 @@ app.setName('G-Command');
 const config = new Config(app.getPath('userData'));
 const ntfy = new NtfySubscriber({ stateDir: app.getPath('userData') });
 
-let panel = null;
-let tray = null;
+let macView = null; // the Mac page, laid over the active view's content area
 let quitting = false;
 let pollTimer = null;
 let latest = { at: null, health: null, today: null, tickets: null };
@@ -158,6 +154,135 @@ if (!window.__gcmRailSync) {
   });
 }`;
 
+// The Mac page: what this device runs (genv, sticky apps, runner mode, alerts).
+// It is not a web page, so the app adds its rail item to the web's own nav
+// list, styled by the web's .nav-item, and draws the page itself in a local
+// view laid over the content area. The item navigates to MAC_PATH with the
+// content area's rect; will-navigate catches that, so the web page needs no
+// bridge and no IPC of its own. A rail resize re-sends the rect.
+const MAC_NAV_JS = `
+if (!window.__gcmMac) {
+  const state = { open: false, prev: [] };
+  const content = () => document.querySelector('.g-shell > main > .content, .g-shell main > .content');
+  const list = () => document.querySelector('.g-shell > aside .nav-list');
+  const go = () => {
+    const c = content();
+    if (!c) return;
+    const r = c.getBoundingClientRect();
+    const q = new URLSearchParams({ x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) });
+    location.assign('${MAC_PATH}?' + q);
+  };
+  const mark = (on) => {
+    const l = list();
+    const item = l && l.querySelector('.nav-item[data-gcm-mac]');
+    if (!item) return;
+    if (on) {
+      state.prev = [...l.querySelectorAll('.nav-item[aria-current]')].filter((n) => n !== item);
+      state.prev.forEach((n) => { n.dataset.gcmCurrent = n.getAttribute('aria-current'); n.removeAttribute('aria-current'); });
+      item.setAttribute('aria-current', 'page');
+      item.scrollIntoView({ block: 'nearest' });
+    } else {
+      item.removeAttribute('aria-current');
+      state.prev.forEach((n) => n.setAttribute('aria-current', n.dataset.gcmCurrent || 'page'));
+      state.prev = [];
+    }
+  };
+  const add = () => {
+    const l = list();
+    if (!l || l.querySelector('[data-gcm-mac]')) return;
+    const head = document.createElement('div');
+    head.className = 'nav-head';
+    head.dataset.gcmMac = '';
+    head.textContent = 'This device';
+    const a = document.createElement('a');
+    a.className = 'nav-item';
+    a.href = '${MAC_PATH}';
+    a.dataset.gcmMac = '';
+    a.innerHTML = '<i class="ph ph-laptop" aria-hidden="true"></i><span class="ellipsis">Mac</span>';
+    a.addEventListener('click', (e) => { e.preventDefault(); e.stopImmediatePropagation(); go(); }, true);
+    l.append(head, a);
+    if (state.open) mark(true);
+  };
+  let t = 0;
+  const later = () => { clearTimeout(t); t = setTimeout(() => { add(); if (state.open) go(); }, 120); };
+  add();
+  new MutationObserver(() => { if (!list() || !list().querySelector('[data-gcm-mac]')) add(); })
+    .observe(document.body, { childList: true, subtree: true });
+  new ResizeObserver(() => state.open && later()).observe(document.documentElement);
+  const c = content();
+  if (c) new ResizeObserver(() => state.open && later()).observe(c);
+  window.__gcmMac = { open: go, set: (on) => { state.open = on; mark(on); } };
+}`;
+
+function macRect(url) {
+  return clampRect(url, main.win.getContentBounds());
+}
+
+function loadMac() {
+  macView.webContents.loadFile(path.join(__dirname, '..', 'renderer', 'mac.html'), {
+    query: { command: config.centralServer.url },
+  });
+}
+
+function ensureMacView() {
+  if (macView && !macView.webContents.isDestroyed()) return macView;
+  macView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload', 'mac.js'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+    },
+  });
+  // Transparent, so the web's rounded content corner shows through.
+  macView.setBackgroundColor('#00000000');
+  macView.setVisible(false);
+  macView.openFor = null;
+  hardenContents(macView.webContents);
+  loadMac();
+  return macView;
+}
+
+function showMac(rect) {
+  const v = ensureMacView();
+  // Re-adding raises it above any warm view added since.
+  main.win.contentView.addChildView(v);
+  // Inset 1px past the web's content rule so the line stays the web's own.
+  v.setBounds({ x: rect.x + 1, y: rect.y + 1, width: Math.max(1, rect.width - 1), height: Math.max(1, rect.height - 1) });
+  v.setVisible(true);
+  if (v.openFor !== main.active) {
+    v.openFor = main.active;
+    const wc = activeContents();
+    if (wc) wc.executeJavaScript('window.__gcmMac && window.__gcmMac.set(true)').catch(() => {});
+    v.webContents.focus();
+    refresh();
+  }
+  main.win.setTitle('Mac');
+}
+
+function hideMac() {
+  if (!macView || !macView.openFor) return;
+  const view = main && main.views.get(macView.openFor);
+  macView.openFor = null;
+  macView.setVisible(false);
+  if (view) view.webContents.executeJavaScript('window.__gcmMac && window.__gcmMac.set(false)').catch(() => {});
+  if (main) updateTitle();
+}
+
+function openMac() {
+  const m = showMain();
+  const wc = activeContents();
+  if (!wc) return;
+  // A page without the rail (sign-in, offline) gets the whole window.
+  wc.executeJavaScript('window.__gcmMac && document.querySelector(".g-shell > aside .nav-list") ? (window.__gcmMac.open(), true) : false')
+    .then((ok) => {
+      if (ok) return;
+      const { width, height } = m.win.getContentBounds();
+      showMac({ x: 0, y: 36, width, height: height - 36 });
+    })
+    .catch(() => {});
+}
+
 function isOwnUrl(url) {
   return !!config.serverForUrl(url) || config.isAuthUrl(url);
 }
@@ -249,6 +374,12 @@ function createView(key, url) {
   hardenContents(wc);
   wc.on('will-navigate', (event, target) => {
     if (event.defaultPrevented) return;
+    if (isMac && isMacUrl(server, target)) {
+      event.preventDefault();
+      if (main && main.active === view.key) showMac(macRect(target));
+      return;
+    }
+    if (main && main.active === view.key) hideMac();
     const k = warmKey(server, target);
     if (k && k !== view.key && main.views.has(k)) {
       event.preventDefault();
@@ -258,12 +389,14 @@ function createView(key, url) {
   wc.on('dom-ready', () => {
     if (isMac && config.serverForUrl(wc.getURL())) wc.insertCSS(INSET_CSS).catch(() => {});
     if (config.serverForUrl(wc.getURL())) wc.executeJavaScript(RAIL_SYNC_JS).catch(() => {});
+    if (isMac && config.serverForUrl(wc.getURL())) wc.executeJavaScript(MAC_NAV_JS).catch(() => {});
   });
   wc.on('did-finish-load', () => {
     view.loadedAt = Date.now();
   });
   const onNav = (_e, navUrl, code) => {
     if (main && main.active === view.key) {
+      hideMac();
       if (!(code >= 400)) rememberUrl(navUrl);
       updateTitle();
     }
@@ -287,6 +420,7 @@ function createView(key, url) {
 // A Mac window is titled by its document: the page name without the site
 // suffix the web adds for browser tabs ("Calendar - Command").
 function updateTitle() {
+  if (macView && macView.openFor) return main.win.setTitle('Mac');
   const wc = activeContents();
   const title = wc ? wc.getTitle() : '';
   main.win.setTitle(title.replace(/\s+-\s+[^-]+$/, '') || 'G-Command');
@@ -296,6 +430,7 @@ function showView(key, url, { record = true } = {}) {
   const prev = activeView();
   const next = main.views.get(key);
   if (!next) return;
+  if (prev !== next) hideMac();
   if (prev && prev !== next && record) main.trail.push({ key: prev.key, url: prev.webContents.getURL() });
   if (main.trail.length > 50) main.trail.shift();
   main.active = key;
@@ -388,6 +523,10 @@ function createMain(server) {
     }
   });
   win.on('closed', () => {
+    if (macView) {
+      if (!macView.webContents.isDestroyed()) macView.webContents.close();
+      macView = null;
+    }
     for (const v of state.views.values()) v.webContents.close();
     if (main === state) main = null;
   });
@@ -429,6 +568,7 @@ function openUrl(url) {
     buildMenu();
   }
   const m = showMain();
+  hideMac();
   const key = warmKey(m.server, url);
   if (key && m.views.has(key)) return showView(key, url);
   const wc = activeContents();
@@ -486,6 +626,7 @@ function buildMenu() {
       label: 'Go',
       submenu: [
         ...PAGES.map((p) => ({ label: p.label, accelerator: p.accel, click: () => openPage(p.path) })),
+        ...(isMac ? [{ label: 'Mac', accelerator: 'CmdOrCtrl+Shift+M', click: openMac }] : []),
         { type: 'separator' },
         { label: 'Back', accelerator: 'CmdOrCtrl+[', click: goBack },
         { label: 'Forward', accelerator: 'CmdOrCtrl+]', click: goForward },
@@ -511,7 +652,6 @@ function buildMenu() {
     { role: 'windowMenu' },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-  if (tray && !isMac) tray.setContextMenu(trayMenu());
 }
 
 // Zoom is per origin in Chromium, so one view's zoom applies to all of them.
@@ -525,112 +665,11 @@ function reloadConfig() {
   buildMenu();
   ntfy.start(config.data.ntfy);
   ensureMainWindow();
-  if (panel && !panel.isDestroyed()) loadPanel();
+  if (macView) loadMac();
   // A changed device restarts the runner on the new name; off stops it.
   const r = runner.status();
   if (!config.data.runner.on) runner.stop();
   else if (!r.on || r.device !== config.data.runner.device) runner.start(config.data.runner.device);
-  refresh();
-}
-
-// ---------------------------------------------------------------- tray
-
-function trayIcon() {
-  const file = isMac ? 'trayTemplate.png' : 'tray.png';
-  const img = nativeImage.createFromPath(path.join(ASSETS, file));
-  if (isMac) img.setTemplateImage(true);
-  return img;
-}
-
-function trayMenu() {
-  return Menu.buildFromTemplate([
-    { label: 'Show status panel', click: togglePanel },
-    { label: 'Open G-Command', click: showMain },
-    { type: 'separator' },
-    ...PAGES.slice(1).map((p) => ({ label: `Open ${p.label.toLowerCase()}`, click: () => openPage(p.path) })),
-    { type: 'separator' },
-    { label: 'Refresh', click: refresh },
-    { label: 'Quit G-Command', click: () => app.quit() },
-  ]);
-}
-
-function createTray() {
-  tray = new Tray(trayIcon());
-  tray.setToolTip('G-Command');
-  if (isMac) {
-    // On macOS a context menu would swallow the left click, so the panel
-    // takes the left click and the menu only appears on right click.
-    tray.on('click', togglePanel);
-    tray.on('right-click', () => tray.popUpContextMenu(trayMenu()));
-  } else {
-    // Linux app indicators only deliver clicks through a menu.
-    tray.setContextMenu(trayMenu());
-    tray.on('click', togglePanel);
-  }
-}
-
-function createPanel() {
-  panel = new BrowserWindow({
-    width: 380,
-    height: 560,
-    show: false,
-    frame: false,
-    resizable: false,
-    movable: false,
-    fullscreenable: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    backgroundColor: '#111113',
-    webPreferences: {
-      preload: path.join(__dirname, '..', 'preload', 'panel.js'),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-    },
-  });
-  if (isMac) panel.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  panel.on('blur', () => {
-    if (!SHOTS && !panel.webContents.isDevToolsOpened()) panel.hide();
-  });
-  hardenContents(panel.webContents);
-  loadPanel();
-}
-
-// The central server is the g-command-web the admin bar links to; command.js
-// copies it into <meta name="g-command">.
-function loadPanel() {
-  panel.loadFile(path.join(__dirname, '..', 'renderer', 'panel.html'), {
-    query: { command: config.centralServer.url },
-  });
-}
-
-function positionPanel() {
-  const [w, h] = panel.getSize();
-  const tb = tray ? tray.getBounds() : { x: 0, y: 0, width: 0, height: 0 };
-  const display = tb.width ? screen.getDisplayNearestPoint({ x: tb.x, y: tb.y }) : screen.getPrimaryDisplay();
-  const wa = display.workArea;
-  let x;
-  let y;
-  if (tb.width) {
-    x = Math.round(tb.x + tb.width / 2 - w / 2);
-    y = tb.y < wa.y + wa.height / 2 ? tb.y + tb.height + 4 : tb.y - h - 4;
-  } else {
-    x = wa.x + wa.width - w - 8;
-    y = wa.y + 8;
-  }
-  x = Math.min(Math.max(x, wa.x + 4), wa.x + wa.width - w - 4);
-  panel.setPosition(x, y, false);
-}
-
-function togglePanel() {
-  if (!panel || panel.isDestroyed()) createPanel();
-  if (panel.isVisible()) {
-    panel.hide();
-    return;
-  }
-  positionPanel();
-  panel.show();
-  panel.focus();
   refresh();
 }
 
@@ -660,12 +699,7 @@ function panelState() {
 
 function pushState() {
   const state = panelState();
-  if (panel && !panel.isDestroyed()) panel.webContents.send('gcm:state', state);
-  if (!tray) return;
-  const h = latest.health && latest.health.ok ? latest.health.data : null;
-  const issues = h ? h.issues.filter((i) => i.state === 'down' || i.state === 'warn').length : 0;
-  tray.setToolTip(h ? (issues ? `G-Command: ${issues} need attention` : 'G-Command: all systems up') : 'G-Command');
-  if (isMac) tray.setTitle(issues ? String(issues) : '');
+  if (macView && !macView.webContents.isDestroyed()) macView.webContents.send('gcm:state', state);
 }
 
 let refreshing = null;
@@ -733,7 +767,7 @@ ipcMain.handle('gcm:refresh', async () => {
   return panelState();
 });
 ipcMain.handle('gcm:genv', async (_e, args) => {
-  // Only a verb the panel was shown, so a renderer can never run arbitrary genv.
+  // Only a verb the Mac page was shown, so a renderer can never run arbitrary genv.
   if (!Array.isArray(args) || !genvStatus.available || !genvMac.allowed(genvStatus.state, args)) {
     return { ok: false, output: 'That action is not offered right now' };
   }
@@ -759,7 +793,6 @@ ipcMain.on('gcm:open', (_e, target) => {
   } else if (target.kind === 'settings') {
     shell.openPath(config.file);
   }
-  if (panel && !SHOTS) panel.hide();
 });
 
 // ---------------------------------------------------------------- screenshots
@@ -776,28 +809,24 @@ async function captureScreens() {
   // Sign in only after the main window is captured, so the docs shot shows
   // the login page rather than live data.
   if (process.env.GCM_LOGIN_PASSWORD) await testLogin(process.env.GCM_LOGIN_PASSWORD);
-  createPanel();
+  await refresh();
+  openMac();
+  await wait(800);
+  const mv = ensureMacView();
   const consoleErrors = [];
-  panel.webContents.on('console-message', (e) => {
+  mv.webContents.on('console-message', (e) => {
     if (e.level === 'error' || e.level === 'warning') consoleErrors.push(e.message);
   });
-  await new Promise((r) => panel.webContents.once('did-finish-load', r));
-  await refresh();
-  await wait(500);
-  // Grow the panel to its content so one shot shows every section.
-  const full = await panel.webContents.executeJavaScript(
-    "document.getElementById('body').scrollHeight + document.querySelector('.head').offsetHeight + document.querySelector('.foot').offsetHeight",
-  );
-  panel.setResizable(true);
-  panel.setSize(380, Math.min(Math.ceil(full) + 4, 1000));
-  positionPanel();
-  panel.showInactive();
+  if (mv.webContents.isLoading()) await new Promise((r) => mv.webContents.once('did-finish-load', r));
   await wait(1500);
-  fs.writeFileSync(path.join(SHOTS, 'tray-panel.png'), (await panel.webContents.capturePage()).toPNG());
+  fs.writeFileSync(path.join(SHOTS, 'mac-page.png'), (await mv.webContents.capturePage()).toPNG());
+  fs.writeFileSync(path.join(SHOTS, 'main-window-mac-rail.png'), (await wc.capturePage()).toPNG());
+  const probe = await wc.executeJavaScript(`(() => { const c = document.querySelector('.g-shell > main > .content'); const r = c && c.getBoundingClientRect(); const i = document.querySelector('.nav-item[data-gcm-mac]'); return { rect: r && [r.left, r.top, r.width, r.height], item: !!i, current: i && i.getAttribute('aria-current'), others: document.querySelectorAll('.nav-item[aria-current]').length, win: [innerWidth, innerHeight] }; })()`);
+  console.log(JSON.stringify({ macBounds: mv.getBounds(), macOpen: !!mv.openFor, probe }));
   if (process.env.GCM_SHOT_THEME) {
-    await panel.webContents.executeJavaScript(`document.documentElement.dataset.theme = ${JSON.stringify(process.env.GCM_SHOT_THEME)}`);
+    await mv.webContents.executeJavaScript(`document.documentElement.dataset.theme = ${JSON.stringify(process.env.GCM_SHOT_THEME)}`);
     await wait(500);
-    fs.writeFileSync(path.join(SHOTS, `tray-panel-${process.env.GCM_SHOT_THEME}.png`), (await panel.webContents.capturePage()).toPNG());
+    fs.writeFileSync(path.join(SHOTS, `mac-page-${process.env.GCM_SHOT_THEME}.png`), (await mv.webContents.capturePage()).toPNG());
   }
   if (process.env.GCM_SMOKE_WAIT_MS) await wait(Number(process.env.GCM_SMOKE_WAIT_MS));
   const runnerPage = await runner.probe();
@@ -875,14 +904,13 @@ if (KEY_FLAG || UNKEY_FLAG) {
   app.whenReady().then(async () => {
     config.load();
     buildMenu();
-    createTray();
     ntfy.start(config.data.ntfy);
     startPolling();
     if (config.data.runner.on || process.env.GCM_RUNNER === '1') runner.start(config.data.runner.device);
     if (SHOTS) return captureScreens();
     if (process.env.GCM_LOGIN_PASSWORD) await testLogin(process.env.GCM_LOGIN_PASSWORD);
     // Launched at login with --hidden: build and warm the window but keep it
-    // off screen until the dock icon or tray asks for it.
+    // off screen until the dock icon asks for it.
     hiddenLaunch = process.argv.includes('--hidden');
     if (hiddenLaunch) ensureMainWindow();
     else showMain();
