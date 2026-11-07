@@ -19,7 +19,6 @@ const {
 const { Config, partitionFor } = require('./config');
 const { NtfySubscriber } = require('./ntfy');
 const { route } = require('./routes');
-const status = require('./status');
 const genvMac = require('./genv-mac');
 const { Runner } = require('./runner');
 const studioKey = require('./studio-key');
@@ -27,7 +26,6 @@ const { MAC_PATH, isMacUrl, clampRect } = require('./mac-page');
 
 const isMac = process.platform === 'darwin';
 const SHOTS = process.env.GCM_SCREENSHOTS || '';
-const REDACT = process.env.GCM_REDACT === '1';
 const DEBUG = process.env.GCM_DEBUG === '1';
 const debug = (o) => DEBUG && console.log(JSON.stringify(o));
 
@@ -44,7 +42,7 @@ const ntfy = new NtfySubscriber({ stateDir: app.getPath('userData') });
 let macView = null; // the Mac page, laid over the active view's content area
 let quitting = false;
 let pollTimer = null;
-let latest = { at: null, health: null, today: null, tickets: null };
+let statusAt = null;
 let ntfyStatus = { status: 'off', detail: '' };
 let genvStatus = { available: false, reason: 'Not checked yet' };
 let genvBusy = null; // id of the genv action running now
@@ -83,7 +81,8 @@ const timing = (event) => process.env.GCM_TIMING && console.log(JSON.stringify({
 // 24px collapse button whose icon sits 8px in from the items' right edge as the icons sit from
 // their left. The content area carries the only vertical rule, rounded at its top-left corner,
 // in every rail state and every frame of the rail's animation, so the rail's own border is never
-// drawn. Studio's own shell, mounted in /studio, gets the same; the Command shell round it has
+// drawn. The current crumb is grey like its parents. Only the nav list scrolls, so the rail's
+// scrollbar starts under the brand row and never crosses the lights' corner. Studio's own shell, mounted in /studio, gets the same; the Command shell round it has
 // no top bar there, so it keeps the plain rail line.
 const INSET_CSS = `
 aside:has(> .brand-row) { -webkit-app-region: drag; }
@@ -120,6 +119,14 @@ body .g-shell > aside > .brand-row, body.g-shell > aside > .brand-row {
   border-top: 1px solid var(--border-subtle); border-top-left-radius: var(--radius-card, 12px);
 }
 header.topbar :is(.topbar-crumbs, .topbar-title, .page-title) { font-size: 13px; }
+header.topbar :is(.topbar-title, .page-title) { color: var(--text-secondary); }
+@media (min-width: 721px) {
+  body .g-shell > aside:has(> .brand-row > .brand), body.g-shell > aside:has(> .brand-row > .brand) { overflow: hidden; }
+  .g-shell > aside > .brand-row ~ .nav-list {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    width: calc(var(--rail-w) - var(--sp-3)); margin-right: calc(-1 * var(--sp-3)); padding-right: var(--sp-3);
+  }
+}
 body.g-shell > main > header.topbar {
   box-sizing: border-box; min-height: 66px; height: 66px; padding-block: 30px 0; padding-left: 0;
   transition: padding-left var(--spring-smooth-dur) var(--spring-smooth);
@@ -162,7 +169,8 @@ if (!window.__gcmRailSync) {
 // bridge and no IPC of its own. A rail resize re-sends the rect.
 const MAC_NAV_JS = `
 if (!window.__gcmMac) {
-  const state = { open: false, prev: [] };
+  const state = { open: false, prev: [], crumb: null };
+  const crumbs = () => document.querySelector('header.topbar > :is(.topbar-crumbs, .topbar-title, .page-title)');
   const content = () => document.querySelector('.g-shell > main > .content, .g-shell main > .content');
   const list = () => document.querySelector('.g-shell > aside .nav-list');
   const go = () => {
@@ -177,30 +185,31 @@ if (!window.__gcmMac) {
     const item = l && l.querySelector('.nav-item[data-gcm-mac]');
     if (!item) return;
     if (on) {
-      state.prev = [...l.querySelectorAll('.nav-item[aria-current]')].filter((n) => n !== item);
+      if (!state.prev.length) state.prev = [...l.querySelectorAll('.nav-item[aria-current]')].filter((n) => n !== item);
       state.prev.forEach((n) => { n.dataset.gcmCurrent = n.getAttribute('aria-current'); n.removeAttribute('aria-current'); });
       item.setAttribute('aria-current', 'page');
       item.scrollIntoView({ block: 'nearest' });
+      const c = crumbs();
+      if (c && !state.crumb) { state.crumb = c.cloneNode(true); c.replaceChildren('Mac'); }
     } else {
       item.removeAttribute('aria-current');
       state.prev.forEach((n) => n.setAttribute('aria-current', n.dataset.gcmCurrent || 'page'));
       state.prev = [];
+      const c = crumbs();
+      if (c && state.crumb) c.replaceChildren(...state.crumb.childNodes);
+      state.crumb = null;
     }
   };
   const add = () => {
     const l = list();
     if (!l || l.querySelector('[data-gcm-mac]')) return;
-    const head = document.createElement('div');
-    head.className = 'nav-head';
-    head.dataset.gcmMac = '';
-    head.textContent = 'This device';
     const a = document.createElement('a');
     a.className = 'nav-item';
     a.href = '${MAC_PATH}';
     a.dataset.gcmMac = '';
     a.innerHTML = '<i class="ph ph-laptop" aria-hidden="true"></i><span class="ellipsis">Mac</span>';
     a.addEventListener('click', (e) => { e.preventDefault(); e.stopImmediatePropagation(); go(); }, true);
-    l.append(head, a);
+    l.append(a);
     if (state.open) mark(true);
   };
   let t = 0;
@@ -278,10 +287,13 @@ function openMac() {
     .then((ok) => {
       if (ok) return;
       const { width, height } = m.win.getContentBounds();
-      showMac({ x: 0, y: 36, width, height: height - 36 });
+      showMac({ x: 0, y: TOPBAR_H, width, height: height - TOPBAR_H });
     })
     .catch(() => {});
 }
+
+// The top bar's height as INSET_CSS sets it, so the no-rail fallback follows it.
+const TOPBAR_H = Number((/body\.g-shell > main > header\.topbar \{[^}]*?[;\s]height:\s*(\d+)px/.exec(INSET_CSS) || [])[1]) || 36;
 
 function isOwnUrl(url) {
   return !!config.serverForUrl(url) || config.isAuthUrl(url);
@@ -675,21 +687,9 @@ function reloadConfig() {
 
 // ---------------------------------------------------------------- data
 
-function redacted(snap) {
-  const s = JSON.parse(JSON.stringify(snap));
-  if (s.today && s.today.ok) {
-    s.today.data.open = s.today.data.open.map((t, i) => ({ ...t, title: `Example task ${i + 1}`, permalink: '' }));
-  }
-  if (s.tickets && s.tickets.ok) {
-    s.tickets.data.open = s.tickets.data.open.map((t, i) => ({ ...t, title: `Example ticket ${i + 1}`, project: 'example' }));
-  }
-  return s;
-}
-
 function panelState() {
-  const snap = REDACT ? redacted(latest) : latest;
   return {
-    ...snap,
+    at: statusAt,
     ntfy: { ...ntfyStatus, topics: config.data.ntfy.topics.length },
     genvMac: { ...genvStatus, actions: genvStatus.available ? genvMac.actions(genvStatus.state) : [], busy: genvBusy },
     runner: { ...runner.status(), wanted: config.data.runner.on },
@@ -705,19 +705,10 @@ function pushState() {
 let refreshing = null;
 function refresh() {
   if (refreshing) return refreshing;
-  const central = config.centralServer;
-  const ses = session.fromPartition(partitionFor(central));
-  refreshing = Promise.all([
-    status.snapshot({
-      fetchImpl: globalThis.fetch,
-      sessionFetch: (url, opts) => ses.fetch(url, opts),
-      brainApi: config.data.brainApi,
-      centralUrl: central.url,
-    }),
-    genvMac.status(config.data),
-  ])
-    .then(([snap, g]) => {
-      latest = snap;
+  // Only what the Mac page shows: the web has its own health, today and tickets.
+  refreshing = genvMac.status(config.data)
+    .then((g) => {
+      statusAt = Date.now();
       genvStatus = g;
       pushState();
     })
@@ -821,8 +812,6 @@ async function captureScreens() {
   await wait(1500);
   fs.writeFileSync(path.join(SHOTS, 'mac-page.png'), (await mv.webContents.capturePage()).toPNG());
   fs.writeFileSync(path.join(SHOTS, 'main-window-mac-rail.png'), (await wc.capturePage()).toPNG());
-  const probe = await wc.executeJavaScript(`(() => { const c = document.querySelector('.g-shell > main > .content'); const r = c && c.getBoundingClientRect(); const i = document.querySelector('.nav-item[data-gcm-mac]'); return { rect: r && [r.left, r.top, r.width, r.height], item: !!i, current: i && i.getAttribute('aria-current'), others: document.querySelectorAll('.nav-item[aria-current]').length, win: [innerWidth, innerHeight] }; })()`);
-  console.log(JSON.stringify({ macBounds: mv.getBounds(), macOpen: !!mv.openFor, probe }));
   if (process.env.GCM_SHOT_THEME) {
     await mv.webContents.executeJavaScript(`document.documentElement.dataset.theme = ${JSON.stringify(process.env.GCM_SHOT_THEME)}`);
     await wait(500);
@@ -830,18 +819,9 @@ async function captureScreens() {
   }
   if (process.env.GCM_SMOKE_WAIT_MS) await wait(Number(process.env.GCM_SMOKE_WAIT_MS));
   const runnerPage = await runner.probe();
-  console.log(JSON.stringify({ screenshots: SHOTS, snapshot: summarise(latest), ntfy: ntfyStatus, genvMac: genvStatus.available, runner: runner.status(), runnerPage, consoleErrors }));
+  console.log(JSON.stringify({ screenshots: SHOTS, ntfy: ntfyStatus, genvMac: genvStatus.available, runner: runner.status(), runnerPage, consoleErrors }));
   quitting = true;
   app.quit();
-}
-
-function summarise(s) {
-  const pick = (r, f) => (r && r.ok ? f(r.data) : `error: ${r && r.error}`);
-  return {
-    health: pick(s.health, (d) => `${d.level}, ${d.issues.length} issues`),
-    today: pick(s.today, (d) => `${d.open.length} open, ${d.settled} settled`),
-    tickets: pick(s.tickets, (d) => (d.signedIn ? `${d.open.length} open` : 'signed out')),
-  };
 }
 
 // ---------------------------------------------------------------- lifecycle

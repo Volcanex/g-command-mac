@@ -16,7 +16,7 @@ own; everything it shows comes from g-command-web and the g-brain REST API.
 - `src/main/config.js`: device-local settings, config.json in userData, mode 0600.
 - `src/main/ntfy.js`: ntfy JSON-stream subscriber, reconnect and resume.
 - `src/main/routes.js`: which g-command-web page a notification opens.
-- `src/main/status.js`: the three panel feeds (health, today, tickets).
+- `src/main/status.js`: health, today and tickets feeds; no longer polled (the web shows them), kept with its tests.
 - `src/main/genv-mac.js`: the genv link: `status()` reads `genv status --json`, `run()` runs any genv verb.
 - `src/main/runner.js`: runner mode, a hidden window on the g-engine device-runner page (see below).
 - `src/preload/mac.js`: the only bridge the Mac page gets (`window.gcm`).
@@ -70,10 +70,10 @@ npm run dist:linux && npm run smoke   # GCM_SMOKE_SERVER, GCM_SMOKE_BRAIN_API: h
   cross hosts. Switching server rebuilds the main window.
 - Navigation off the configured servers' origins is blocked in-app and handed to
   the default browser (`hardenContents`). Add a host to `servers` to keep it in-app.
-- No tray. On macOS `MAC_NAV_JS` appends a "This device" head and a Mac `.nav-item` to the web
+- No tray. On macOS `MAC_NAV_JS` appends a Mac `.nav-item` (under Additional tools) to the web
   rail's `.nav-list`; clicking it navigates to `/__gcm/mac?x&y&w&h` (the content area's rect),
   which will-navigate catches to lay a local `mac.html` view over the content area. Any other
-  navigation or view swap hides it. Go, Mac (Cmd+Shift+M) opens it too. Not offered on Linux.
+  navigation or view swap hides it. While open the top-bar crumbs read "Mac". The no-rail fallback sits below `TOPBAR_H`, read from INSET_CSS. Go, Mac (Cmd+Shift+M) opens it too. Not offered on Linux.
 - Under xvfb `Notification.isSupported()` is false (no notification daemon), so
   the smoke test checks the routing log line, not a visible notification.
 - `npm install` may skip Electron's binary download in this environment; run
