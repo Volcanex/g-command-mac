@@ -74,20 +74,32 @@ const BG = '#111113';
 const STALE_MS = 90 * 1000;
 const timing = (event) => process.env.GCM_TIMING && console.log(JSON.stringify({ timing: event, at: Date.now() }));
 
-// The web page owns the whole window. Its sidebar is pushed down by the
-// height of the traffic lights and its top bar becomes the drag handle, so
-// the native chrome is the three buttons and nothing else.
-// The content area's top-left corner is rounded where the top bar's rule meets the rail's,
-// and the page title is 24px (twice the 12px traffic light) with its cap top level with the
-// lights' top (y 12). Studio's own shell, mounted in /studio, gets the same; the Command shell
-// round it has no top bar there, so it keeps the plain rail line.
+// The web page owns the whole window. Its top 48px (the top bar's height, --h-5) is the title
+// row: the traffic lights centre on its 24px line (trafficLightPosition y 16 puts the 12px
+// circles at 18..30), and so does the page title at the kit's 15px, its left edge on the
+// content's own text edge (the gutter, or on Home the cards' inner edge, 26px in). Below the
+// row the rail's brand keeps its place (centred on y 68, its first nav item at y 96) but is one
+// 32px nav row: a 16px mark and 14px wordmark on the nav items' icon and label columns, and a
+// 24px collapse button whose icon sits 8px in from the items' right edge as the icons sit from
+// their left. The
+// content area carries the only vertical rule, rounded at its top-left corner, in every rail
+// state and every frame of the rail's animation, so the rail's own border is never drawn.
+// Studio's own shell, mounted in /studio, gets the same; the Command shell round it has no
+// top bar there, so it keeps the plain rail line.
 const INSET_CSS = `
 aside:has(> .brand-row) { -webkit-app-region: drag; }
-.g-shell > aside > .brand-row { padding-top: calc(var(--sp-3) + 40px) !important; }
 aside:has(> .brand-row) > * { -webkit-app-region: no-drag; }
 header.topbar { -webkit-app-region: drag; }
 header.topbar a, header.topbar button, header.topbar input, header.topbar select,
 header.topbar [role="button"], header.topbar [tabindex] { -webkit-app-region: no-drag; }
+body .g-shell > aside > .brand-row, body.g-shell > aside > .brand-row {
+  -webkit-app-region: drag; padding-top: calc(var(--sp-3) + 40px) !important; margin-bottom: var(--sp-2);
+}
+.g-shell > aside > .brand-row > * { -webkit-app-region: no-drag; }
+.g-shell > aside > .brand-row > .brand { padding: 0 var(--sp-2); min-height: var(--h-3); gap: var(--sp-2); }
+.g-shell > aside > .brand-row > .brand .g-mark { width: 16px; height: 16px; }
+.g-shell > aside > .brand-row > .brand b { font-size: 14px; line-height: var(--lh-2); }
+.g-shell > aside > .brand-row > .g-rail-toggle { width: var(--h-1); height: var(--h-1); margin: 0 var(--sp-1) 0 0; }
 .g-shell[data-rail="collapsed"]:not([data-rail-peek]) > aside:has(> .brand-row) {
   border-right-color: transparent !important;
   background-image: linear-gradient(var(--border), var(--border));
@@ -96,9 +108,9 @@ header.topbar [role="button"], header.topbar [tabindex] { -webkit-app-region: no
   background-position: right bottom;
   background-repeat: no-repeat;
 }
-.g-shell:not(body.studio-page):not([data-rail-peek]) > aside:has(> .brand-row) {
+.g-shell:not(body.studio-page) > aside:has(> .brand-row) {
   border-right-color: transparent !important;
-  background-image: none;
+  background-image: none !important;
 }
 .g-shell:not(body.studio-page):has(> aside > .brand-row) > main { background: var(--surface-1); }
 .g-shell:not(body.studio-page):has(> aside > .brand-row) > main > header.topbar { border-bottom-color: transparent; }
@@ -108,10 +120,7 @@ header.topbar [role="button"], header.topbar [tabindex] { -webkit-app-region: no
 .g-shell:not(body.studio-page):has(> aside > .brand-row) > main > .content {
   border-top: 1px solid var(--border-subtle); border-top-left-radius: var(--radius-card, 12px);
 }
-.g-shell:has(> aside > .brand-row) > main > header.topbar :is(.topbar-crumbs, .topbar-title, .page-title) {
-  font-size: 24px; line-height: 32px;
-}
-.g-shell:has(> aside > .brand-row) > main > header.topbar > :is(.topbar-crumbs, .topbar-title, .page-title) { position: relative; top: -2px; }
+body.home-page > main > header.topbar { padding-left: 26px; }
 `;
 
 // The web's rail reads its pinned/collapsed choice from localStorage once, at
@@ -331,7 +340,7 @@ function createMain(server) {
     title: 'G-Command',
     backgroundColor: BG,
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
-    trafficLightPosition: { x: 16, y: 10 },
+    trafficLightPosition: { x: 16, y: 16 },
   });
   const state = { win, server, views: new Map(), active: null, trail: [] };
   main = state;
