@@ -374,6 +374,7 @@ function createView(key, url) {
   const view = new WebContentsView({
     webPreferences: {
       partition: partitionFor(server),
+      preload: path.join(__dirname, '..', 'preload', 'inset.js'),
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
@@ -401,7 +402,6 @@ function createView(key, url) {
     }
   });
   wc.on('dom-ready', () => {
-    if (isMac && config.serverForUrl(wc.getURL())) wc.insertCSS(INSET_CSS).catch(() => {});
     if (config.serverForUrl(wc.getURL())) wc.executeJavaScript(RAIL_SYNC_JS).catch(() => {});
     if (isMac && config.serverForUrl(wc.getURL())) wc.executeJavaScript(MAC_NAV_JS).catch(() => {});
   });
@@ -754,6 +754,10 @@ ntfy.on('message', (msg) => {
 
 // ---------------------------------------------------------------- ipc
 
+// The pool views' preload asks for INSET_CSS before the page parses (src/preload/inset.js).
+ipcMain.on('gcm:inset-css', (e, url) => {
+  e.returnValue = isMac && config.serverForUrl(String(url || '')) ? INSET_CSS : '';
+});
 ipcMain.handle('gcm:state', () => panelState());
 ipcMain.handle('gcm:refresh', async () => {
   await refresh();
