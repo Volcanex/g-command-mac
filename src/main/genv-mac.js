@@ -104,7 +104,7 @@ function run(config, args) {
   });
 }
 
-// The panel's genv buttons, built from `genv status --json`. Rule from
+// The Mac page's genv buttons, built from `genv status --json`. Rule from
 // genv-bar: each label names what clicking DOES (the destination), never the
 // current state; the state goes in `detail`. `args` is the genv verb run as is.
 function actions(st) {
@@ -143,7 +143,7 @@ function actions(st) {
   return out;
 }
 
-// The panel may only ask for verbs it was shown.
+// The Mac page may only ask for verbs it was shown.
 function allowed(st, args) {
   const want = JSON.stringify(args);
   return actions(st).some((a) => a.enabled && JSON.stringify(a.args) === want);

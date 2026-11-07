@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:">
+<title>Mac</title>
+<meta name="g-command" content="">
+<script src="command.js"></script>
+<link rel="stylesheet" href="static/g/g.css">
+<link rel="stylesheet" href="mac.css">
+<script defer src="static/g/g-ui.js"></script>
+<script defer src="mac.js"></script>
+</head>
+<body>
+  <main class="g-page g-page-content">
+    <header class="page-head">
+      <h1>Mac</h1>
+      <span class="grow"></span>
+      <span class="updated num" id="updated"></span>
+      <button class="btn btn-sm btn-secondary" id="refresh">Refresh status</button>
+    </header>
+    <section class="card">
+      <div class="card-head"><span class="card-title">genv</span><span class="card-meta num" id="genv-count"></span></div>
+      <div id="genv"></div>
+    </section>
+    <section class="card" id="sticky-card" hidden>
+      <div class="card-head"><span class="card-title">Sticky apps</span></div>
+      <div id="sticky"></div>
+    </section>
+    <section class="card">
+      <div class="card-head"><span class="card-title">Runner</span><span class="card-meta" id="runner-count"></span></div>
+      <div id="runner"></div>
+    </section>
+    <section class="card">
+      <div class="card-head"><span class="card-title">This device</span></div>
+      <div id="local"></div>
+    </section>
+  </main>
+</body>
+</html>

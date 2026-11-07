@@ -266,3 +266,20 @@ test('genv sticky actions: unstick, reorder, and only offer running apps not alr
   assert.ok(genvMac.allowed({ sticky: ['Claude'] }, ['sticky', 'remove', 'Claude']));
   assert.ok(!genvMac.allowed({ sticky: [] }, ['sticky', 'remove', 'Claude']));
 });
+
+const macPage = require('../src/main/mac-page');
+
+test('mac page: only its own path on the active server opens it', () => {
+  const server = { url: 'https://command.example.com' };
+  assert.equal(macPage.isMacUrl(server, 'https://command.example.com/__gcm/mac?x=1'), true);
+  assert.equal(macPage.isMacUrl(server, 'https://evil.example.com/__gcm/mac'), false);
+  assert.equal(macPage.isMacUrl(server, 'https://command.example.com/calendar'), false);
+  assert.equal(macPage.isMacUrl(server, 'not a url'), false);
+});
+
+test('mac page: the rect from the page is clamped to the window', () => {
+  const win = { width: 1000, height: 800 };
+  assert.deepEqual(macPage.clampRect('https://h/__gcm/mac?x=240&y=36&w=760&h=740', win), { x: 240, y: 36, width: 760, height: 740 });
+  assert.deepEqual(macPage.clampRect('https://h/__gcm/mac?x=-5&y=abc&w=99999&h=', win), { x: 0, y: 0, width: 1000, height: 800 });
+  assert.deepEqual(macPage.clampRect('https://h/__gcm/mac?x=990&y=790&w=50&h=50', win), { x: 990, y: 790, width: 10, height: 10 });
+});

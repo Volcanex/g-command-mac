@@ -69,7 +69,7 @@ const kill = setTimeout(() => child.kill('SIGTERM'), 120000);
 child.on('exit', () => {
   clearTimeout(kill);
   fs.rmSync(userData, { recursive: true, force: true });
-  const files = ['main-window.png', 'tray-panel.png', 'tray-panel-light.png'].filter((f) => fs.existsSync(path.join(shots, f)));
+  const files = ['main-window.png', 'mac-page.png', 'mac-page-light.png'].filter((f) => fs.existsSync(path.join(shots, f)));
   const result = {
     ntfyLive: seen.live,
     notified: seen.notified,

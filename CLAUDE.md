@@ -1,7 +1,7 @@
 # g-command-mac
 
 The G-System desktop app (Electron): g-command-web in a native window, native
-notifications from the ntfy alert spine, and a menu-bar status panel.
+notifications from the ntfy alert spine, and a Mac page in the main window (genv, sticky apps, runner). genv-bar owns the menu bar.
 Companion to g-command-web (`Volcanex/g-command-web`). Built on h on
 2026-10-09 and finished on the Mac. Builds are unsigned until a Developer ID
 certificate is installed (Mac handoff, below).
@@ -11,14 +11,15 @@ certificate is installed (Mac handoff, below).
 own; everything it shows comes from g-command-web and the g-brain REST API.
 
 ## Layout
-- `src/main/main.js`: lifecycle, main window, app menu, tray, panel window, polling, IPC.
+- `src/main/main.js`: lifecycle, main window, app menu, the Mac page overlay (`MAC_NAV_JS`), polling, IPC.
+- `src/main/mac-page.js`: the Mac page's URL check and rect clamp (pure, tested).
 - `src/main/config.js`: device-local settings, config.json in userData, mode 0600.
 - `src/main/ntfy.js`: ntfy JSON-stream subscriber, reconnect and resume.
 - `src/main/routes.js`: which g-command-web page a notification opens.
 - `src/main/status.js`: the three panel feeds (health, today, tickets).
 - `src/main/genv-mac.js`: the genv link: `status()` reads `genv status --json`, `run()` runs any genv verb.
 - `src/main/runner.js`: runner mode, a hidden window on the g-engine device-runner page (see below).
-- `src/preload/panel.js`: the only bridge the panel gets (`window.gcm`).
+- `src/preload/mac.js`: the only bridge the Mac page gets (`window.gcm`).
 - `src/renderer/`: panel and offline pages. `command.js` fills their `<meta name="g-command">` with the central server's origin, which `main.js` passes as `?command=`. `src/renderer/static/g/` is g-design, vendored.
 - `scripts/measure.js`: launch-speed harness (cold launch to real content, page switches, reopen), drives the app only through its menu and lifecycle events.
 - `scripts/smoke.js`: headless smoke run under xvfb, writes `docs-screens/` unless given a directory.
@@ -69,9 +70,10 @@ npm run dist:linux && npm run smoke   # GCM_SMOKE_SERVER, GCM_SMOKE_BRAIN_API: h
   cross hosts. Switching server rebuilds the main window.
 - Navigation off the configured servers' origins is blocked in-app and handed to
   the default browser (`hardenContents`). Add a host to `servers` to keep it in-app.
-- macOS tray: left click opens the panel, right click the menu, because a context
-  menu set on the tray would swallow the left click. Linux indicators only deliver
-  clicks through a menu, so there the menu carries "Show status panel".
+- No tray. On macOS `MAC_NAV_JS` appends a "This device" head and a Mac `.nav-item` to the web
+  rail's `.nav-list`; clicking it navigates to `/__gcm/mac?x&y&w&h` (the content area's rect),
+  which will-navigate catches to lay a local `mac.html` view over the content area. Any other
+  navigation or view swap hides it. Go, Mac (Cmd+Shift+M) opens it too. Not offered on Linux.
 - Under xvfb `Notification.isSupported()` is false (no notification daemon), so
   the smoke test checks the routing log line, not a visible notification.
 - `npm install` may skip Electron's binary download in this environment; run
