@@ -17,6 +17,7 @@ own; everything it shows comes from g-command-web and the g-brain REST API.
 - `src/main/routes.js`: which g-command-web page a notification opens.
 - `src/main/status.js`: the three panel feeds (health, today, tickets).
 - `src/main/genv-mac.js`: the genv link: `status()` reads `genv status --json`, `run()` runs any genv verb.
+- `src/main/runner.js`: runner mode, a hidden window on the g-engine device-runner page (see below).
 - `src/preload/panel.js`: the only bridge the panel gets (`window.gcm`).
 - `src/renderer/`: panel and offline pages. `command.js` fills their `<meta name="g-command">` with the central server's origin, which `main.js` passes as `?command=`. `src/renderer/static/g/` is g-design, vendored.
 - `scripts/measure.js`: launch-speed harness (cold launch to real content, page switches, reopen), drives the app only through its menu and lifecycle events.
@@ -94,13 +95,28 @@ npm run dist:linux && npm run smoke   # GCM_SMOKE_SERVER, GCM_SMOKE_BRAIN_API: h
   the same machine. The first run writes them into config.json, so changing them
   never moves an existing install, and a new install needs its own hosts set there.
 
-## g-env-mac link (stub)
+## Runner mode
+Replaces `~/mac-runner.sh`. The panel's "Run jobs on this Mac" opens
+`https://newcastlev2.gabrielpenman.com/v2/tests/run/?device=<runner.device>` in a hidden
+BrowserWindow of its own (partition `persist:runner`, never the main window, so closing that does
+not stop it). `backgroundThrottling:false` keeps timers running and keeps
+`document.visibilityState` 'visible' while hidden; the page refuses jobs when it reads 'hidden'.
+powerSaveBlocker holds `prevent-display-sleep` and `prevent-app-suspension` (the nearest Electron
+gets to `caffeinate -dimsu`). A crash or failed load reloads after 5 s. `runner.on` and
+`runner.device` (default gabriel-main) live in config.json; File, Reload settings applies a new
+device. The page needs no sign-in. `GCM_RUNNER=1` starts it for a test run, and the screenshot run
+logs what the page reports (`runnerPage`); use a throwaway device name there so it takes no real job.
+
+## g-env-mac link
 `src/main/genv-mac.js` finds a checkout at `config.genvMac.path`, `$G_ENV_MAC_DIR`,
 `~/genv` (the live one), `~/g-env-mac`, `~/genv-mac` or the Desktop variants, then runs
 `bin/genv status --json` with Homebrew on PATH; `state` is the parsed JSON and
 `summary` one readable line. An older checkout without `--json` falls back to the
 panel's first line. `run(config, args)` runs any genv verb: the app never
 reimplements one. Absent checkout means `{available:false}`, never an error.
+`actions(state)` builds the panel's genv buttons; each label names what clicking does (genv-bar's
+rule), the current state goes in the detail. The `gcm:genv` IPC runs only verbs `allowed()` says
+the panel was shown, then refreshes status.
 
 ## Mac handoff
 What the Mac agent must do, in order:
