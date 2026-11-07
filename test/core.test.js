@@ -184,3 +184,77 @@ test('ensureSession trades the key only when the studio says signed out', async 
   assert.strictEqual(await studioKey.ensureSession({ ses, origin, key: GOOD }), 'signed-in');
   assert.strictEqual(calls.length, 3);
 });
+
+// ---------------------------------------------------------------- genv actions and runner
+
+const runnerMod = require('../src/main/runner');
+const GENV_STATE = {
+  processes: { aerospace: 'up', 'ae-swipe': 'up', 'genv-bar': 'up', 'ae-fade': 'down' },
+  sidecar: { connected: 'iPad', devices: [{ name: 'iPad', connected: true }] },
+  monitors: 2, tiling: 'on', term_home: 'secondary', ipad_side: 'right', chrome: 'on: 1, 2',
+};
+
+test('genv actions are named for the destination, not the state', () => {
+  const by = Object.fromEntries(genvMac.actions(GENV_STATE).map((a) => [a.id, a]));
+  assert.equal(by.down.label, 'Stop genv');
+  assert.equal(by.ipad.label, 'Disconnect the iPad');
+  assert.equal(by.side.label, 'Move the iPad to the left');
+  assert.equal(by.term.label, 'Home the terminal on the Mac');
+  assert.equal(by.tiling.label, 'Turn tiling off');
+  assert.equal(by.chrome.label, 'Turn Chrome harmony off');
+  assert.match(by.fade.detail, /down/);
+  assert.deepEqual(by.side.args, ['ipad', 'side', 'toggle']);
+});
+
+test('genv actions flip and disable with state', () => {
+  const st = { processes: { aerospace: 'down' }, sidecar: { connected: null, devices: [] }, tiling: 'off', term_home: 'main', ipad_side: 'left', chrome: 'off' };
+  const by = Object.fromEntries(genvMac.actions(st).map((a) => [a.id, a]));
+  assert.deepEqual(by.up.args, ['up']);
+  assert.equal(by.ipad.label, 'Connect the iPad');
+  assert.equal(by.side.label, 'Move the iPad to the right');
+  assert.equal(by.side.enabled, false);
+  assert.equal(by.tiling.enabled, false);
+  assert.equal(by.chrome.label, 'Turn Chrome harmony on');
+  assert.equal(genvMac.allowed(st, ['tiling', 'toggle']), false);
+  assert.equal(genvMac.allowed(st, ['up']), true);
+  assert.equal(genvMac.allowed(st, ['rm', '-rf']), false);
+});
+
+test('runner url and device names', () => {
+  assert.equal(runnerMod.runnerUrl('gabriel-main'), 'https://newcastlev2.gabrielpenman.com/v2/tests/run/?device=gabriel-main');
+  assert.equal(runnerMod.cleanDevice(' Gabriel Main/2 '), 'gabriel-main-2');
+  assert.equal(runnerMod.cleanDevice(''), 'gabriel-main');
+  const c = tmpConfig({ runner: { on: 'yes', device: 'Studio Mac' } });
+  assert.deepEqual(c.data.runner, { on: false, device: 'studio-mac' });
+  assert.deepEqual(tmpConfig().data.runner, { on: false, device: 'gabriel-main' });
+});
+
+test('runner restarts after a crash and stops cleanly', async () => {
+  const blocked = [];
+  const wins = [];
+  class FakeWin {
+    constructor(opts) { this.opts = opts; this.h = {}; this.dead = false; wins.push(this);
+      this.webContents = { on: (n, f) => { this.h[n] = f; }, setWindowOpenHandler() {}, executeJavaScript: async () => ({}) }; }
+    on(n, f) { this.h['win:' + n] = f; }
+    loadURL(u) { this.url = u; return Promise.resolve(); }
+    isDestroyed() { return this.dead; }
+    destroy() { this.dead = true; }
+  }
+  const active = new Set();
+  const psb = { start: (k) => { blocked.push(k); active.add(blocked.length); return blocked.length; }, stop: (id) => active.delete(id) };
+  const r = new runnerMod.Runner({ BrowserWindow: FakeWin, powerSaveBlocker: psb });
+  r.start('gabriel-main');
+  assert.equal(wins[0].opts.webPreferences.backgroundThrottling, false);
+  assert.equal(wins[0].opts.webPreferences.partition, runnerMod.PARTITION);
+  assert.equal(wins[0].opts.show, false);
+  assert.deepEqual(blocked, ['prevent-display-sleep', 'prevent-app-suspension']);
+  wins[0].h['did-finish-load']();
+  assert.equal(r.status().state, 'up');
+  wins[0].h['render-process-gone']({}, { reason: 'crashed' });
+  assert.equal(r.status().state, 'restarting');
+  assert.match(r.status().lastError, /crashed/);
+  r.stop();
+  assert.equal(r.status().on, false);
+  assert.equal(wins[0].dead, true);
+  assert.equal(active.size, 0);
+});

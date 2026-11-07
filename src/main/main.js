@@ -11,6 +11,7 @@ const {
   Tray,
   ipcMain,
   nativeImage,
+  powerSaveBlocker,
   safeStorage,
   screen,
   session,
@@ -23,6 +24,7 @@ const { NtfySubscriber } = require('./ntfy');
 const { route } = require('./routes');
 const status = require('./status');
 const genvMac = require('./genv-mac');
+const { Runner } = require('./runner');
 const studioKey = require('./studio-key');
 
 const isMac = process.platform === 'darwin';
@@ -49,6 +51,9 @@ let pollTimer = null;
 let latest = { at: null, health: null, today: null, tickets: null };
 let ntfyStatus = { status: 'off', detail: '' };
 let genvStatus = { available: false, reason: 'Not checked yet' };
+let genvBusy = null; // id of the genv action running now
+// Runner mode lives in its own hidden window (runner.js), not the main one.
+const runner = new Runner({ BrowserWindow, powerSaveBlocker }, () => pushState());
 
 // Cmd+1..9 map to the web's own sidebar pages, in its order.
 const PAGES = [
@@ -481,6 +486,10 @@ function reloadConfig() {
   ntfy.start(config.data.ntfy);
   ensureMainWindow();
   if (panel && !panel.isDestroyed()) loadPanel();
+  // A changed device restarts the runner on the new name; off stops it.
+  const r = runner.status();
+  if (!config.data.runner.on) runner.stop();
+  else if (!r.on || r.device !== config.data.runner.device) runner.start(config.data.runner.device);
   refresh();
 }
 
@@ -603,7 +612,8 @@ function panelState() {
   return {
     ...snap,
     ntfy: { ...ntfyStatus, topics: config.data.ntfy.topics.length },
-    genvMac: genvStatus,
+    genvMac: { ...genvStatus, actions: genvStatus.available ? genvMac.actions(genvStatus.state) : [], busy: genvBusy },
+    runner: { ...runner.status(), wanted: config.data.runner.on },
     server: { name: config.centralServer.name, url: config.centralServer.url },
   };
 }
@@ -682,6 +692,24 @@ ipcMain.handle('gcm:refresh', async () => {
   await refresh();
   return panelState();
 });
+ipcMain.handle('gcm:genv', async (_e, args) => {
+  // Only a verb the panel was shown, so a renderer can never run arbitrary genv.
+  if (!Array.isArray(args) || !genvStatus.available || !genvMac.allowed(genvStatus.state, args)) {
+    return { ok: false, output: 'That action is not offered right now' };
+  }
+  genvBusy = args.join(' ');
+  pushState();
+  const res = await genvMac.run(config.data, args);
+  genvBusy = null;
+  await refresh();
+  return res;
+});
+ipcMain.handle('gcm:runner', (_e, on) => {
+  config.update({ runner: { ...config.data.runner, on: on === true } });
+  if (on === true) runner.start(config.data.runner.device);
+  else runner.stop();
+  return panelState();
+});
 ipcMain.on('gcm:open', (_e, target) => {
   if (!target || typeof target !== 'object') return;
   if (target.kind === 'page' && typeof target.path === 'string' && target.path.startsWith('/')) {
@@ -732,7 +760,8 @@ async function captureScreens() {
     fs.writeFileSync(path.join(SHOTS, `tray-panel-${process.env.GCM_SHOT_THEME}.png`), (await panel.webContents.capturePage()).toPNG());
   }
   if (process.env.GCM_SMOKE_WAIT_MS) await wait(Number(process.env.GCM_SMOKE_WAIT_MS));
-  console.log(JSON.stringify({ screenshots: SHOTS, snapshot: summarise(latest), ntfy: ntfyStatus, genvMac: genvStatus.available, consoleErrors }));
+  const runnerPage = await runner.probe();
+  console.log(JSON.stringify({ screenshots: SHOTS, snapshot: summarise(latest), ntfy: ntfyStatus, genvMac: genvStatus.available, runner: runner.status(), runnerPage, consoleErrors }));
   quitting = true;
   app.quit();
 }
@@ -809,6 +838,7 @@ if (KEY_FLAG || UNKEY_FLAG) {
     createTray();
     ntfy.start(config.data.ntfy);
     startPolling();
+    if (config.data.runner.on || process.env.GCM_RUNNER === '1') runner.start(config.data.runner.device);
     if (SHOTS) return captureScreens();
     if (process.env.GCM_LOGIN_PASSWORD) await testLogin(process.env.GCM_LOGIN_PASSWORD);
     // Launched at login with --hidden: build and warm the window but keep it
@@ -825,6 +855,7 @@ if (KEY_FLAG || UNKEY_FLAG) {
   app.on('before-quit', () => {
     quitting = true;
     ntfy.stop();
+    runner.stop();
   });
   app.on('window-all-closed', () => {});
 }

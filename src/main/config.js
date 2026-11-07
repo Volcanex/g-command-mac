@@ -8,6 +8,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { cleanDevice } = require('./runner');
 
 const DEFAULTS = {
   servers: [
@@ -34,6 +35,11 @@ const DEFAULTS = {
   studioOrigin: 'https://studio.gabrielpenman.com',
   genvMac: {
     path: '',
+  },
+  // Runner mode (runner.js): this Mac takes g-engine device-test jobs as `device`.
+  runner: {
+    on: false,
+    device: 'gabriel-main',
   },
 };
 
@@ -79,6 +85,9 @@ function normalise(raw) {
   c.ntfy.topics = (c.ntfy.topics || []).map((t) => String(t).trim()).filter(Boolean);
   c.ntfy.server = String(c.ntfy.server || DEFAULTS.ntfy.server).replace(/\/+$/, '');
   c.genvMac = { ...DEFAULTS.genvMac, ...(c.genvMac || {}) };
+  c.runner = { ...DEFAULTS.runner, ...(c.runner || {}) };
+  c.runner.on = c.runner.on === true;
+  c.runner.device = cleanDevice(c.runner.device, DEFAULTS.runner.device);
   c.brainApi = String(c.brainApi || DEFAULTS.brainApi).replace(/\/+$/, '');
   c.pollSeconds = Math.max(15, Number(c.pollSeconds) || DEFAULTS.pollSeconds);
   if (!Array.isArray(c.routes)) c.routes = [];

@@ -104,4 +104,38 @@ function run(config, args) {
   });
 }
 
-module.exports = { locate, status, run, summarise, candidates, STATUS_ARGS };
+// The panel's genv buttons, built from `genv status --json`. Rule from
+// genv-bar: each label names what clicking DOES (the destination), never the
+// current state; the state goes in `detail`. `args` is the genv verb run as is.
+function actions(st) {
+  const s = st || {};
+  const procs = s.processes || {};
+  const wmUp = procs.aerospace === 'up';
+  const devices = (s.sidecar && s.sidecar.devices) || [];
+  const docked = devices.some((d) => d.connected);
+  const chromeOn = String(s.chrome || 'off').startsWith('on');
+  const out = [];
+  out.push(wmUp
+    ? { id: 'down', label: 'Stop genv', detail: 'Running now', args: ['down'] }
+    : { id: 'up', label: 'Start genv', detail: 'Stopped now', args: ['up'] });
+  out.push(docked
+    ? { id: 'ipad', label: 'Disconnect the iPad', detail: `${s.sidecar.connected || 'iPad'} connected now`, args: ['ipad', 'toggle'] }
+    : { id: 'ipad', label: 'Connect the iPad', detail: devices.length ? 'Not connected now' : 'No iPad paired', args: ['ipad', 'toggle'] });
+  const side = s.ipad_side === 'left' ? 'left' : 'right';
+  out.push({ id: 'side', label: `Move the iPad to the ${side === 'left' ? 'right' : 'left'}`, detail: `On the ${side} now`, args: ['ipad', 'side', 'toggle'], enabled: docked, why: 'Needs the iPad connected' });
+  const termMac = s.term_home !== 'secondary';
+  out.push({ id: 'term', label: termMac ? 'Home the terminal on the iPad' : 'Home the terminal on the Mac', detail: `On the ${termMac ? 'Mac' : 'iPad'} now`, args: ['term', 'toggle'], enabled: docked, why: 'Needs a second display' });
+  out.push({ id: 'tiling', label: s.tiling === 'on' ? 'Turn tiling off' : 'Turn tiling on', detail: `Tiling ${s.tiling === 'on' ? 'on' : 'off'} now`, args: ['tiling', 'toggle'], enabled: wmUp, why: 'Needs genv running' });
+  out.push({ id: 'chrome', label: chromeOn ? 'Turn Chrome harmony off' : 'Turn Chrome harmony on', detail: chromeOn ? `On now (${String(s.chrome).replace(/^on[:,]?\s*/, '') || 'active'})` : 'Off now', args: ['chrome', 'toggle'] });
+  out.push({ id: 'fade', label: 'Restart the switch fade', detail: `ae-fade ${procs['ae-fade'] === 'up' ? 'up' : 'down'} now`, args: ['fade', 'restart'] });
+  for (const a of out) if (a.enabled === undefined) a.enabled = true;
+  return out;
+}
+
+// The panel may only ask for verbs it was shown.
+function allowed(st, args) {
+  const want = JSON.stringify(args);
+  return actions(st).some((a) => a.enabled && JSON.stringify(a.args) === want);
+}
+
+module.exports = { locate, status, run, summarise, actions, allowed, candidates, STATUS_ARGS };
