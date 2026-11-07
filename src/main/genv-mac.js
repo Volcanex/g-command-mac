@@ -128,6 +128,17 @@ function actions(st) {
   out.push({ id: 'tiling', label: s.tiling === 'on' ? 'Turn tiling off' : 'Turn tiling on', detail: `Tiling ${s.tiling === 'on' ? 'on' : 'off'} now`, args: ['tiling', 'toggle'], enabled: wmUp, why: 'Needs genv running' });
   out.push({ id: 'chrome', label: chromeOn ? 'Turn Chrome harmony off' : 'Turn Chrome harmony on', detail: chromeOn ? `On now (${String(s.chrome).replace(/^on[:,]?\s*/, '') || 'active'})` : 'Off now', args: ['chrome', 'toggle'] });
   out.push({ id: 'fade', label: 'Restart the switch fade', detail: `ae-fade ${procs['ae-fade'] === 'up' ? 'up' : 'down'} now`, args: ['fade', 'restart'] });
+  // Sticky apps: the windows that follow every workspace switch, leftmost first.
+  // `genv sticky` owns the list (~/.genv-sticky); the terminal is never one.
+  const sticky = Array.isArray(s.sticky) ? s.sticky : [];
+  sticky.forEach((app, i) => {
+    out.push({ id: `unstick:${app}`, group: 'sticky', label: `Stop ${app} following you`, detail: `Sticky, ${i === 0 ? 'leftmost' : `slot ${i + 1}`}`, args: ['sticky', 'remove', app] });
+    if (i > 0) out.push({ id: `left:${app}`, group: 'sticky', label: `Move ${app} one slot left`, detail: `Slot ${i + 1} now`, args: ['sticky', 'left', app] });
+  });
+  const skip = new Set(['Ghostty', 'Electron', ...sticky]);
+  for (const app of (Array.isArray(s.running_apps) ? s.running_apps : []).filter((a) => !skip.has(a))) {
+    out.push({ id: `stick:${app}`, group: 'sticky', label: `Make ${app} follow you`, detail: 'Stays on its own workspace now', args: ['sticky', 'add', app] });
+  }
   for (const a of out) if (a.enabled === undefined) a.enabled = true;
   return out;
 }

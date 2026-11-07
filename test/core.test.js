@@ -258,3 +258,11 @@ test('runner restarts after a crash and stops cleanly', async () => {
   assert.equal(wins[0].dead, true);
   assert.equal(active.size, 0);
 });
+
+test('genv sticky actions: unstick, reorder, and only offer running apps not already sticky', () => {
+  const a = genvMac.actions({ processes: { aerospace: 'up' }, sticky: ['G Command', 'Claude'], running_apps: ['Claude', 'Ghostty', 'Spotify'] });
+  const ids = a.filter((x) => x.group === 'sticky').map((x) => x.id);
+  assert.deepStrictEqual(ids, ['unstick:G Command', 'unstick:Claude', 'left:Claude', 'stick:Spotify']);
+  assert.ok(genvMac.allowed({ sticky: ['Claude'] }, ['sticky', 'remove', 'Claude']));
+  assert.ok(!genvMac.allowed({ sticky: [] }, ['sticky', 'remove', 'Claude']));
+});

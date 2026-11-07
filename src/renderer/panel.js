@@ -155,7 +155,12 @@ function renderGenv(s) {
   const down = procs.filter(([, v]) => v !== 'up').map(([k]) => k);
   $('genv-count').textContent = down.length ? `${down.length} down` : `${procs.length} up`;
   if (down.length) box.append(note(`Down: ${down.join(', ')}`));
+  let stickyHead = false;
   for (const a of g.actions || []) {
+    if (a.group === 'sticky' && !stickyHead) {
+      stickyHead = true;
+      box.append(note('Sticky apps follow you onto every workspace, leftmost first'));
+    }
     const busy = g.busy === a.args.join(' ');
     const b = item([
       el('span', 'label', busy ? `${a.label}, running` : a.label),
