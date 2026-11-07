@@ -75,13 +75,14 @@ const STALE_MS = 90 * 1000;
 const timing = (event) => process.env.GCM_TIMING && console.log(JSON.stringify({ timing: event, at: Date.now() }));
 
 // The web page owns the whole window. The traffic lights keep macOS's inset place (12px
-// circles at y 12..24, centre 18), and the top bar shrinks to 36px so it has the lights' 12px
-// above and below them: the page title or crumbs, at the 13px of the nav labels, centre on the
-// lights' line (caps nudged 1px down, the first glyph's 1px side bearing taken back) and start
-// exactly on the rail/content edge, just above the content's top rule. Over a collapsed rail
-// that edge is under the lights, so the title moves, easing with the rail, to where page content
-// starts (the content's 1px rule plus --gutter), the same on every page. Below, the rail's brand
-// keeps its original centre (y 68) but is one 32px nav row: a 16px mark and 14px wordmark on the nav items' icon and label columns, and a
+// circles at y 12..24, centre 18). The top bar comes down to the rail's brand row: 86px tall,
+// its last 36px a row whose centre (y 68) is the brand's, so the page title or crumbs, at the
+// 13px of the nav labels, read on the same line as the brand (caps nudged 1px down, the first
+// glyph's 1px side bearing taken back), with the content's top rule 18px under that line. The
+// title starts exactly on the rail/content edge; over a collapsed rail it moves, easing with the
+// rail, to where page content starts (the content's 1px rule plus --gutter), the same on every
+// page. The rail's brand keeps its original centre (y 68) but is one 32px nav row: a 16px mark
+// and 14px wordmark on the nav items' icon and label columns, and a
 // 24px collapse button whose icon sits 8px in from the items' right edge as the icons sit from
 // their left. The content area carries the only vertical rule, rounded at its top-left corner,
 // in every rail state and every frame of the rail's animation, so the rail's own border is never
@@ -123,7 +124,7 @@ body .g-shell > aside > .brand-row, body.g-shell > aside > .brand-row {
 }
 header.topbar :is(.topbar-crumbs, .topbar-title, .page-title) { font-size: 13px; }
 body.g-shell > main > header.topbar {
-  min-height: 36px; height: 36px; padding-block: 0; padding-left: 0;
+  box-sizing: border-box; min-height: 86px; height: 86px; padding-block: 50px 0; padding-left: 0;
   transition: padding-left var(--spring-smooth-dur) var(--spring-smooth);
 }
 body.g-shell[data-rail="collapsed"]:not([data-rail-peek]) > main > header.topbar { padding-left: calc(1px + var(--gutter)); }
