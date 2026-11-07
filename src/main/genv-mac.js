@@ -1,6 +1,6 @@
 'use strict';
 
-// Local link to g-env-mac (GitHub Volcanex/g-env-mac). STUB.
+// Local link to the Mac's genv checkout (the one ~/.local/bin/genv runs from).
 //
 // The contract this app relies on is deliberately small:
 //   locate(config)  -> absolute path of a g-env-mac checkout, or null
@@ -19,7 +19,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 
-const STATUS_ARGS = ['status'];
+const STATUS_ARGS = ['status', '--json'];
 const TIMEOUT_MS = 8000;
 
 function candidates(config) {
@@ -27,6 +27,8 @@ function candidates(config) {
   return [
     config && config.genvMac && config.genvMac.path,
     process.env.G_ENV_MAC_DIR,
+    // The live checkout: ~/.local/bin/genv and the AeroSpace config link here.
+    path.join(home, 'genv'),
     path.join(home, 'g-env-mac'),
     path.join(home, 'genv-mac'),
     path.join(home, 'Desktop', 'g-env-mac'),
@@ -47,30 +49,59 @@ function stripAnsi(s) {
   return String(s || '').replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, '');
 }
 
-function status(config) {
-  const dir = locate(config);
-  if (!dir) return Promise.resolve({ available: false, reason: 'No g-env-mac checkout found' });
+function genvEnv() {
   // Apps launched from Finder get a bare PATH; bin/genv's shebang wants
   // Homebrew's python3.12.
-  const env = {
+  return {
     ...process.env,
     PATH: ['/opt/homebrew/bin', '/usr/local/bin', process.env.PATH || '/usr/bin:/bin'].join(':'),
     NO_COLOR: '1',
     COLUMNS: '100',
   };
+}
+
+// One line a person reads, from the JSON state.
+function summarise(st) {
+  const procs = Object.entries(st.processes || {});
+  const down = procs.filter(([, v]) => v !== 'up').map(([k]) => k);
+  const head = !procs.length ? 'genv' : down.length ? `genv: ${down.join(', ')} down` : 'genv all up';
+  const pad = st.sidecar && st.sidecar.connected ? `, ${st.sidecar.connected} connected` : '';
+  return head + pad;
+}
+
+function status(config) {
+  const dir = locate(config);
+  if (!dir) return Promise.resolve({ available: false, reason: 'No genv checkout found' });
   return new Promise((resolve) => {
-    execFile(path.join(dir, 'bin', 'genv'), STATUS_ARGS, { cwd: dir, env, timeout: TIMEOUT_MS }, (err, stdout, stderr) => {
+    execFile(path.join(dir, 'bin', 'genv'), STATUS_ARGS, { cwd: dir, env: genvEnv(), timeout: TIMEOUT_MS }, (err, stdout, stderr) => {
       const output = stripAnsi(stdout || stderr).trim();
-      const summary = output.split('\n').map((l) => l.trim()).find(Boolean) || '';
+      let state = null;
+      try { state = JSON.parse(output); } catch {}
+      // An older checkout without --json prints the rich panel: keep its first line.
+      const summary = state ? summarise(state)
+        : output.split('\n').map((l) => l.trim()).find(Boolean) || '';
       resolve({
         available: true,
         path: dir,
         ok: !err,
         summary: err && !summary ? 'genv status did not answer' : summary,
         output,
+        state,
       });
     });
   });
 }
 
-module.exports = { locate, status, candidates, STATUS_ARGS };
+// Run a genv verb (e.g. ['ipad', 'toggle']). The app never reimplements one:
+// genv is the single implementation, the app is a button for it.
+function run(config, args) {
+  const dir = locate(config);
+  if (!dir) return Promise.resolve({ ok: false, output: 'No genv checkout found' });
+  return new Promise((resolve) => {
+    execFile(path.join(dir, 'bin', 'genv'), args, { cwd: dir, env: genvEnv(), timeout: 20000 }, (err, stdout, stderr) => {
+      resolve({ ok: !err, output: stripAnsi(stdout || stderr).trim() });
+    });
+  });
+}
+
+module.exports = { locate, status, run, summarise, candidates, STATUS_ARGS };

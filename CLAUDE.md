@@ -16,7 +16,7 @@ own; everything it shows comes from g-command-web and the g-brain REST API.
 - `src/main/ntfy.js`: ntfy JSON-stream subscriber, reconnect and resume.
 - `src/main/routes.js`: which g-command-web page a notification opens.
 - `src/main/status.js`: the three panel feeds (health, today, tickets).
-- `src/main/genv-mac.js`: the g-env-mac link. **Stub**, see below.
+- `src/main/genv-mac.js`: the genv link: `status()` reads `genv status --json`, `run()` runs any genv verb.
 - `src/preload/panel.js`: the only bridge the panel gets (`window.gcm`).
 - `src/renderer/`: panel and offline pages. `command.js` fills their `<meta name="g-command">` with the central server's origin, which `main.js` passes as `?command=`. `src/renderer/static/g/` is g-design, vendored.
 - `scripts/measure.js`: launch-speed harness (cold launch to real content, page switches, reopen), drives the app only through its menu and lifecycle events.
@@ -96,9 +96,11 @@ npm run dist:linux && npm run smoke   # GCM_SMOKE_SERVER, GCM_SMOKE_BRAIN_API: h
 
 ## g-env-mac link (stub)
 `src/main/genv-mac.js` finds a checkout at `config.genvMac.path`, `$G_ENV_MAC_DIR`,
-`~/g-env-mac`, `~/genv-mac`, `~/Desktop/g-env-mac` or `~/Desktop/genv-mac`, then runs
-`bin/genv status` with Homebrew on PATH and shows its first line. That verb prints
-a rich panel, not JSON. Absent checkout means `{available:false}`, never an error.
+`~/genv` (the live one), `~/g-env-mac`, `~/genv-mac` or the Desktop variants, then runs
+`bin/genv status --json` with Homebrew on PATH; `state` is the parsed JSON and
+`summary` one readable line. An older checkout without `--json` falls back to the
+panel's first line. `run(config, args)` runs any genv verb: the app never
+reimplements one. Absent checkout means `{available:false}`, never an error.
 
 ## Mac handoff
 What the Mac agent must do, in order:
