@@ -127,12 +127,14 @@ header.topbar :is(.topbar-title, .page-title) { color: var(--text-secondary); }
     width: calc(var(--rail-w) - var(--sp-3)); margin-right: calc(-1 * var(--sp-3)); padding-right: var(--sp-3);
   }
 }
-body.g-shell > main > header.topbar {
+body.g-shell > main > header.topbar, .studio-host .g-shell > main > header.topbar {
   box-sizing: border-box; min-height: 66px; height: 66px; padding-block: 30px 0; padding-left: 0;
   transition: padding-left var(--spring-smooth-dur) var(--spring-smooth);
 }
-body.g-shell[data-rail="collapsed"]:not([data-rail-peek]) > main > header.topbar { padding-left: calc(1px + var(--gutter)); }
-body.g-shell > main > header.topbar > :is(.topbar-crumbs, .topbar-title, .page-title) {
+body.g-shell[data-rail="collapsed"]:not([data-rail-peek]) > main > header.topbar,
+.studio-host .g-shell[data-rail="collapsed"]:not([data-rail-peek]) > main > header.topbar { padding-left: calc(1px + var(--gutter)); }
+body.g-shell > main > header.topbar > :is(.topbar-crumbs, .topbar-title, .page-title),
+.studio-host .g-shell > main > header.topbar > :is(.topbar-crumbs, .topbar-title, .page-title) {
   position: relative; top: 1px; margin-left: -1px;
 }
 `;
@@ -293,7 +295,7 @@ function openMac() {
 }
 
 // The top bar's height as INSET_CSS sets it, so the no-rail fallback follows it.
-const TOPBAR_H = Number((/body\.g-shell > main > header\.topbar \{[^}]*?[;\s]height:\s*(\d+)px/.exec(INSET_CSS) || [])[1]) || 36;
+const TOPBAR_H = Number((/body\.g-shell > main > header\.topbar[^{]*\{[^}]*?[;\s]height:\s*(\d+)px/.exec(INSET_CSS) || [])[1]) || 36;
 
 function isOwnUrl(url) {
   return !!config.serverForUrl(url) || config.isAuthUrl(url);
