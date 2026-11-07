@@ -74,18 +74,19 @@ const BG = '#111113';
 const STALE_MS = 90 * 1000;
 const timing = (event) => process.env.GCM_TIMING && console.log(JSON.stringify({ timing: event, at: Date.now() }));
 
-// The web page owns the whole window. Its top 48px (the top bar's height, --h-5) is the title
-// row: the traffic lights centre on its 24px line (trafficLightPosition y 16 puts the 12px
-// circles at 18..30), and so does the page title at the kit's 15px, its left edge on the
-// content's own text edge (the gutter, or on Home the cards' inner edge, 26px in). Below the
-// row the rail's brand keeps its place (centred on y 68, its first nav item at y 96) but is one
+// The web page owns the whole window. The traffic lights keep macOS's inset place (12px
+// circles at y 12..24, centre 18), and the top bar shrinks to 36px so it has the lights' 12px
+// above and below them: the page title or crumbs, at the 13px of the nav labels, centre on the
+// lights' line (caps nudged 1px down, the first glyph's 1px side bearing taken back) and start
+// exactly on the rail/content edge, just above the content's top rule.
+// Over a collapsed rail that edge is under the lights, so the title steps 24px right to clear
+// them, easing with the rail. Below, the rail's brand keeps its original centre (y 68) but is one
 // 32px nav row: a 16px mark and 14px wordmark on the nav items' icon and label columns, and a
 // 24px collapse button whose icon sits 8px in from the items' right edge as the icons sit from
-// their left. The
-// content area carries the only vertical rule, rounded at its top-left corner, in every rail
-// state and every frame of the rail's animation, so the rail's own border is never drawn.
-// Studio's own shell, mounted in /studio, gets the same; the Command shell round it has no
-// top bar there, so it keeps the plain rail line.
+// their left. The content area carries the only vertical rule, rounded at its top-left corner,
+// in every rail state and every frame of the rail's animation, so the rail's own border is never
+// drawn. Studio's own shell, mounted in /studio, gets the same; the Command shell round it has
+// no top bar there, so it keeps the plain rail line.
 const INSET_CSS = `
 aside:has(> .brand-row) { -webkit-app-region: drag; }
 aside:has(> .brand-row) > * { -webkit-app-region: no-drag; }
@@ -120,7 +121,15 @@ body .g-shell > aside > .brand-row, body.g-shell > aside > .brand-row {
 .g-shell:not(body.studio-page):has(> aside > .brand-row) > main > .content {
   border-top: 1px solid var(--border-subtle); border-top-left-radius: var(--radius-card, 12px);
 }
-body.home-page > main > header.topbar { padding-left: 26px; }
+header.topbar :is(.topbar-crumbs, .topbar-title, .page-title) { font-size: 13px; }
+body.g-shell > main > header.topbar {
+  min-height: 36px; height: 36px; padding-block: 0; padding-left: 0;
+  transition: padding-left var(--spring-smooth-dur) var(--spring-smooth);
+}
+body.g-shell[data-rail="collapsed"]:not([data-rail-peek]) > main > header.topbar { padding-left: 24px; }
+body.g-shell > main > header.topbar > :is(.topbar-crumbs, .topbar-title, .page-title) {
+  position: relative; top: 1px; margin-left: -1px;
+}
 `;
 
 // The web's rail reads its pinned/collapsed choice from localStorage once, at
@@ -340,7 +349,7 @@ function createMain(server) {
     title: 'G-Command',
     backgroundColor: BG,
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
-    trafficLightPosition: { x: 16, y: 16 },
+    trafficLightPosition: { x: 16, y: 10 },
   });
   const state = { win, server, views: new Map(), active: null, trail: [] };
   main = state;
